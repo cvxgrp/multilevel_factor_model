@@ -1,9 +1,40 @@
 import numpy as np
 import mlrfit as mf
+from scipy.sparse.linalg import svds, eigsh
 
 
 
 
+
+def low_rank_approx(A, dim=None, symm=False, v0=None):
+    """
+    Return low rank approximation of A \approx B C^T
+    """
+    M =  min(A.shape[0], A.shape[1])
+    if dim is None: dim = M
+    dim = min(dim, min(A.shape[0], A.shape[1]))
+    if dim < M:
+        try:
+            U, sigmas, Vt = svds(A, k=dim, which='LM', v0=v0)
+        except:
+            maxiter = min(A.shape) * 100
+            try:
+                print(f"svds fail: increase {maxiter=}")
+                U, sigmas, Vt = svds(A, k=dim, which='LM', v0=v0, maxiter=maxiter)
+            except:
+                print(f"svds fail: decrease tol")
+                U, sigmas, Vt = svds(A, k=dim, which='LM', v0=v0, tol=1e-2)
+    else:
+        U, sigmas, Vt = np.linalg.svd(A, full_matrices=False, hermitian=symm)
+    # decreasing order of sigmas
+    idx = np.argsort(sigmas)[::-1]
+    sigmas = sigmas[idx]
+    U = U[:, idx]
+    Vt = Vt[idx, :]
+    sqrt_sigmas = np.sqrt(np.maximum(sigmas, 0))
+    B = U * sqrt_sigmas
+    C = Vt.T * sqrt_sigmas
+    return B, C
 
 
 def generate_mlr_model(n, hpart, ranks, signal_to_noise):
@@ -29,7 +60,8 @@ def generate_mlr_model(n, hpart, ranks, signal_to_noise):
 
 def generate_data(true_sparse_F, D_noise, nsamples, true_mlr):
     """
-    Return C: n x nsamples
+    Return C: n x nsamples, where features in C are in general order
+    ie, to get groups apply permutation in true_mlr.pi_rows
     """
     n, s = true_sparse_F.shape
     Z = np.random.randn(s, nsamples)
@@ -46,3 +78,4 @@ def print_hpart_numgroups(hpart:mf.HpartDict):
         part_sizes += [hpart['rows']['lk'][level].size-1]
         print(f"{level=}, num_groups={hpart['rows']['lk'][level].size-1}, mean_size={np.diff(hpart['rows']['lk'][level]).mean():.1f}")
     return part_sizes
+

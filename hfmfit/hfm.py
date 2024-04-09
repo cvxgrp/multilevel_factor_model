@@ -7,6 +7,7 @@ from tqdm import tqdm
 import scipy
 from sklearn.utils.extmath import fast_logdet
 
+from hfmfit.utils import *
 
 
 
@@ -29,6 +30,18 @@ def perm_hat_Sigma(F_compressed:np.ndarray, D:np.ndarray, hpart_entry:mf.EntryHp
     num_levels = ranks.size
     assert F_compressed.shape == (D.shape[0], ranks[:-1].sum())
     perm_hat_A = np.copy(np.diag(D.flatten())) + 0
+    for level in range(num_levels - 1):
+        perm_hat_A += block_diag_FFt(level, hpart_entry, F_compressed[:,ranks[:level].sum():ranks[:level+1].sum()])
+    return perm_hat_A
+
+
+def perm_tildeF_tildeFt(F_compressed:np.ndarray, hpart_entry:mf.EntryHpartDict, ranks:np.ndarray):
+    """
+        Compute permuted \tilde F \tilde F^T with each A_level being block diagonal matrix 
+    """
+    num_levels = ranks.size
+    assert F_compressed.shape[1] == ranks[:-1].sum()
+    perm_hat_A = np.zeros((F_compressed.shape[0], F_compressed.shape[0]))
     for level in range(num_levels - 1):
         perm_hat_A += block_diag_FFt(level, hpart_entry, F_compressed[:,ranks[:level].sum():ranks[:level+1].sum()])
     return perm_hat_A
@@ -110,6 +123,18 @@ def exp_true_loglikelihood_value(Sigma):
     return obj
 
 
+def exp_loglikelihood_value(true_Sigma, fitted_Sigma, fitted_lu, fitted_piv):
+    """
+        Expected log-likelihood under the true model
+    """
+    n = true_Sigma.shape[0]
+    (sign, logabsdet) = np.linalg.slogdet(fitted_Sigma)
+    assert sign == 1, print(sign, logabsdet, np.linalg.det(fitted_Sigma))
+    fitted_Sigma_true_Sigma = scipy.linalg.lu_solve((fitted_lu, fitted_piv), true_Sigma)
+    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * (logabsdet) - (1/2) * np.trace(fitted_Sigma_true_Sigma)
+    return obj
+
+
 def loglikelihood_value(Sigma, lu, piv, Y):
     """
         Average log-likelihood of observed data
@@ -159,19 +184,28 @@ def EM_get_D(F0, F1, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_g
 
 
 def em_algorithm(n, Y, part_sizes, F_hpart, row_selectors, si_groups, ranks, max_iter=200, 
-                 eps=1e-12, printing=False):
+                 eps=1e-12, freq=50, printing=False, F0=None, D0=None):
     """
         Y: N x n has already permuted columns, ie, features ordered wrt F_hpart
     """
     loglikelihoods = [-np.inf]
-    rank = ranks.sum()
-    F0, D0 = np.random.randn(n, rank-1), np.square(np.random.rand(n)) + 1
+    N = Y.shape[0]
+    if F0 is None:
+        # F0 = np.random.randn(n, ranks[:-1].sum()) * 0.015
+        # _, C = low_rank_approx(Y, dim=ranks[0], symm=False)
+        # F0[:, :ranks[0]] = C / np.sqrt(N)
+        _, C = low_rank_approx(Y, dim=ranks[:-1].sum(), symm=False)
+        F0 = C / np.sqrt(N)
+        D0 = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - np.diag(perm_tildeF_tildeFt(F0, F_hpart, ranks)), 1e-4)
+        # D0 = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - np.einsum('ij,ji->i', F0, F0.T), 1e-8)
+        # F0, D0 = np.random.randn(n, ranks[:-1].sum()), np.square(np.random.rand(n)) + 1e-6
+    assert D0.shape == (n, ) and F0.shape == (n, ranks[:-1].sum())
     for t in range(max_iter):
             Sigma0 = perm_hat_Sigma(F0, D0, F_hpart, ranks)
             lu, piv = scipy.linalg.lu_factor(Sigma0)
             obj = loglikelihood_value(Sigma0, lu, piv, Y)
             loglikelihoods += [obj]
-            if printing and t % 50 == 0:
+            if printing and t % freq == 0:
                 print(f"{t=}, {obj=}")
             F1 = EM_get_F(F0, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_groups)
             D1 = EM_get_D(F0, F1, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_groups)
@@ -180,6 +214,8 @@ def em_algorithm(n, Y, part_sizes, F_hpart, row_selectors, si_groups, ranks, max
             if loglikelihoods[-1] - loglikelihoods[-2] < eps * abs(loglikelihoods[-2]):
                 print(f"terminating at {t=}")
                 break
+    if printing:
+        print(f"{t=}, {obj=}")
     return loglikelihoods, F0, D0
 
 
@@ -201,3 +237,16 @@ def q_thetap_theta_value(F1, D1, F0, lu, piv, Y, row_selectors, si_groups, ranks
         obj += - 0.5 * np.sum(M * np.power(D1[r1:r2], -1)) - 0.5 * np.trace(ci_B_ci)
     return obj / N
 
+
+def frob_fit_loglikehood(undermuted_A, Y, F_hpart, hpart, ranks, printing=True, eps_ff=1e-3):
+    hat_A = mf.MLRMatrix()
+    hat_A.hpart = hpart
+    losses = hat_A.factor_fit(undermuted_A, ranks, hat_A.hpart, eps_ff=eps_ff, PSD=True, freq=1, \
+                                    printing=printing, max_iters_ff=50, symm=True)
+    F_frob, D_frob = hat_A.B[:, :-1], np.square(hat_A.B[:, -1])
+    Sigma_frob = perm_hat_Sigma(F_frob, D_frob, F_hpart, ranks)
+    lu, piv = scipy.linalg.lu_factor(Sigma_frob)
+    obj_frob = loglikelihood_value(Sigma_frob, lu, piv, Y)
+    print(f"FR: {obj_frob = }")
+    print(f"{mf.rel_diff(hat_A.matrix(), den=undermuted_A)=} \n{np.linalg.slogdet(hat_A.matrix())=}")
+    return obj_frob
