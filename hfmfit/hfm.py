@@ -54,7 +54,7 @@ def perm_hat_Sigma_sp(sparse_F:np.ndarray, D:np.ndarray):
     return sparse_F @ sparse_F.T + np.diag(D.flatten())
 
 
-def row_col_selections(hpart):
+def row_col_selections(hpart, return_groups=False):
     """
         Define row and col selectors for each row sparsity pattern of F
     """
@@ -80,7 +80,10 @@ def row_col_selections(hpart):
     assert si_groups.shape == (row_selectors.size - 1, L) == np.unique(si_groups, axis=0).shape
     print(si_groups.shape, si_groups[-1])
     F_hpart = {"lk": hpart['rows']['lk'][:-1], "pi":hpart['rows']['pi']} 
-    return row_selectors, si_groups, F_hpart
+    if return_groups:
+        return row_selectors, si_groups, F_hpart, groups_all
+    else:
+        return row_selectors, si_groups, F_hpart
 
 
 def group_to_indices(group, part_sizes, ranks):
