@@ -37,7 +37,7 @@ def low_rank_approx(A, dim=None, symm=False, v0=None):
     return B, C
 
 
-def generate_mlr_model(n, hpart, ranks, signal_to_noise):
+def generate_mlr_model(n, hpart, ranks, signal_to_noise, debug=False):
     # B = [F, \sqrt{D}]
     B = np.random.randn(n, ranks.sum()) 
     true_mlr = mf.MLRMatrix(hpart=hpart, ranks=ranks, B=B, C=B)
@@ -52,9 +52,10 @@ def generate_mlr_model(n, hpart, ranks, signal_to_noise):
     true_mlr.B[:, -1] = np.sqrt(true_D_noise)
     print(f"signal_var={np.diag(true_sparse_F @ true_sparse_F.T).mean()}, noise_var={true_D_noise.mean()}")
     print(f"SNR={np.diag(true_sparse_F @ true_sparse_F.T).mean()/true_D_noise.mean()}, {signal_to_noise=}")
-    # permuted, ie, each group is on the block diagonal
-    perm_true_covariance = true_sparse_F @ true_sparse_F.T + np.diag(true_D_noise)
-    assert np.allclose(true_mlr.matrix()[true_mlr.pi_rows, :][:, true_mlr.pi_cols], perm_true_covariance)
+    if debug:
+        # permuted, ie, each group is on the block diagonal
+        perm_true_covariance = true_sparse_F @ true_sparse_F.T + np.diag(true_D_noise)
+        assert np.allclose(true_mlr.matrix()[true_mlr.pi_rows, :][:, true_mlr.pi_cols], perm_true_covariance)
     return true_mlr, true_sparse_F, true_D_noise
 
 
