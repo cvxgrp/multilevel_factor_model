@@ -83,3 +83,4 @@ def jit_mult_blockdiag_refined_AtB(A, lk_A, B, lk_B):
         r1, r2 = lk_A[block_A], lk_A[block_A+1]
         res[block_A * A.shape[1] : (block_A+1) * A.shape[1]] = A[r1:r2].T @ B[r1:r2]
     return res
+

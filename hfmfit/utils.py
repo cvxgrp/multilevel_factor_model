@@ -80,3 +80,10 @@ def print_hpart_numgroups(hpart:mf.HpartDict):
         print(f"{level=}, num_groups={hpart['rows']['lk'][level].size-1}, mean_size={np.diff(hpart['rows']['lk'][level]).mean():.1f}")
     return part_sizes
 
+
+def valid_hpart(hpart):
+    for level in range(len(hpart["rows"]["lk"])-1):
+        assert np.in1d(hpart['rows']['lk'][level], hpart['rows']['lk'][level+1]).all()
+    for level in range(len(hpart["cols"]["lk"])-1):
+        assert np.in1d(hpart['cols']['lk'][level], hpart['cols']['lk'][level+1]).all()
+        
