@@ -37,6 +37,29 @@ def low_rank_approx(A, dim=None, symm=False, v0=None):
     return B, C
 
 
+def generate_mfmodel(true_mfm, n, F_hpart, ranks, signal_to_noise, debug=False):
+    F = np.random.randn(n, ranks.sum()-1) 
+    true_mfm._update_hpart(F_hpart)
+    true_mfm.ranks = ranks
+    true_mfm.F = F
+    avg_signal_variance = np.sum(true_mfm.diag_sparse_FFt(F, F_hpart, ranks)) / n
+    # expectation[D_i] = avg_signal_variance / signal_to_noise
+    true_D_noise = np.random.uniform(0, (2/signal_to_noise) * avg_signal_variance, n)
+    true_mfm.D = true_D_noise
+
+    print(f"signal_var={true_mfm.diag().mean()}, noise_var={true_D_noise.mean()}")
+    print(f"SNR={true_mfm.diag_sparse_FFt(F, F_hpart, ranks).mean() / true_D_noise.mean()}, {signal_to_noise=}")
+    assert true_mfm.F.shape[1] == true_mfm.ranks[:-1].sum()
+    if debug:
+        true_sparse_F = mf.convert_compressed_to_sparse(true_mfm.F, 
+                                             F_hpart, 
+                                             true_mfm.ranks[:-1]).toarray()
+        # permuted, ie, each group is on the block diagonal
+        perm_true_covariance = true_sparse_F @ true_sparse_F.T + np.diag(true_D_noise)
+        assert np.allclose(true_mfm.matrix(), perm_true_covariance[true_mfm.pi_inv, :][:, true_mfm.pi_inv])
+    return true_mfm
+
+
 def generate_mlr_model(n, hpart, ranks, signal_to_noise, debug=False):
     # B = [F, \sqrt{D}]
     B = np.random.randn(n, ranks.sum()) 
@@ -123,7 +146,7 @@ def row_col_selections(hpart, return_groups=False):
 def group_to_indices(group, part_sizes, ranks):
     """
         Given a group (corresponding to some sparsity pattern s_i)
-        return the indices of nonzero columns in F
+        return the indices of nonzero columns in sparse F
     """
     cumsum = 0
     indices = []

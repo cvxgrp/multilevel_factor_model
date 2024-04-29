@@ -154,8 +154,9 @@ def mfm_matvec(F_compressed, D, F_hpart, ranks, x0):
     return res[pi_inv]
 
 
-def iterative_refinement(ranks, v, F_Lm1, D, F_hpart, eps=1e-9, max_iter=20, printing=False):
+def iterative_refinement(ranks, v, F_Lm1, D, F_hpart, eps=1e-11, max_iter=20, printing=False):
     v_norm = np.linalg.norm(v)
+    if len(v.shape) == 1: v = v.reshape(-1, 1)
     residual = v_norm + 0
     t = 0
     x = np.zeros((v.size, 1))
@@ -168,7 +169,7 @@ def iterative_refinement(ranks, v, F_Lm1, D, F_hpart, eps=1e-9, max_iter=20, pri
         t += 1
         if printing:
             print(residual/v_norm)
-    if residual / v_norm > eps:
+    if printing and residual / v_norm > eps:
         print(f"terminated with {residual/v_norm=}")
     return x
 

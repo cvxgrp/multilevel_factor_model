@@ -1,11 +1,9 @@
 from scipy.linalg import block_diag
-import torch
 import mlrfit as mf
 import numpy as np
 
 from tqdm import tqdm
 import scipy
-from sklearn.utils.extmath import fast_logdet
 
 
 from mfmodel.utils import *
@@ -17,10 +15,7 @@ def block_diag_FFt(level:int, hpart_entry:mf.EntryHpartDict, F_level:np.ndarray)
     for block in range(num_blocks):
         r1, r2 = hpart_entry['lk'][level][block], hpart_entry['lk'][level][block+1]
         A_level += [ F_level[r1:r2] @ F_level[r1:r2].T ]
-    if torch.is_tensor(F_level):
-        return torch.block_diag(*A_level)
-    else:
-        return block_diag(*A_level)
+    return block_diag(*A_level)
     
 
 def perm_hat_Sigma(F_compressed:np.ndarray, D:np.ndarray, hpart_entry:mf.EntryHpartDict, ranks:np.ndarray):

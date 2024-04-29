@@ -57,17 +57,18 @@ class MFModel:
             N = Y.shape[0] # Y is already permuted to put factors on blockdiagonal
             _, C = low_rank_approx(Y, dim=ranks[:-1].sum(), symm=False)
             F = C / np.sqrt(N)
-            D = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - self.diag_sparse_FFtt(F, hpart, ranks), 1e-4)
+            D = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - self.diag_sparse_FFt(F, hpart, ranks), 1e-4)
         return F, D
     
 
     def diag(self):
+        # return diagonal of Sigma
         return (self.diag_sparse_FFt(self.F, self.hpart, self.ranks) + self.D)[self.pi_inv]
 
 
     def diag_sparse_FFt(self, F_compressed, hpart, ranks):
         # F_compressed: n x (r-1) 
-        # return diag(\tilde F \tilde F^T)
+        # return diag(\tilde F \tilde F^T) without permutation
         res = np.zeros(hpart['pi'].size)
         for level in range(len(hpart["lk"])):
             lk = hpart["lk"][level]
@@ -99,35 +100,6 @@ class MFModel:
         return iterative_refinement(self.ranks, v, self.F, self.D, self.hpart, 
                                     eps=eps, max_iter=max_iter, printing=printing)
     
-
-    def fit(self, n, Y, F0, D0, part_sizes, F_hpart, row_selectors, si_groups, ranks, lls=False, max_iter=200, 
-                        eps=1e-12, freq=50, printing=False):
-        """
-            Fast EM algorithm
-            Y: N x n has already permuted columns, ie, features ordered wrt F_hpart
-        """
-        loglikelihoods = [-np.inf]
-        self.init_FD(self.ranks, self.hpart, init_type='Y', Y=Y)
-        N = Y.shape[0]
-        for t in range(max_iter):
-                if lls:
-                    obj = loglikelihood_value(Sigma0, lu, piv, Y)
-                    loglikelihoods += [obj]
-                if printing and t % freq == 0:
-                    print(f"{t=}, {obj=}")
-                F1 = EM_get_F(F0, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_groups)
-                D1 = EM_get_D(F0, F1, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_groups)
-                F0, D0 = F1, D1
-                assert D1.min() >= -1e-8 and loglikelihoods[-2] - 1e-8 <= loglikelihoods[-1]
-                if loglikelihoods[-1] - loglikelihoods[-2] < eps * abs(loglikelihoods[-2]):
-                    print(f"terminating at {t=}")
-                    break
-        if printing:
-            print(f"{t=}, {obj=}")
-        self.F, self.D = F0, D0
-        if lls:
-            return loglikelihoods
-
     
     def num_factors(self):
         # return number of unique factors
