@@ -6,11 +6,11 @@ with open("README.md", "r") as fh:
 
 
 setup(
-    name="hfmfit",
+    name="mfmodel",
     version="0.0.1",
-    packages=["hfmfit"],
+    packages=["mfmodel"],
     license="GPLv3",
-    description="Fitting hierarchical factor models",
+    description="Fitting multilevel factor models",
     long_description=long_description,
     long_description_content_type="text/markdown",
     # install_requires=[
