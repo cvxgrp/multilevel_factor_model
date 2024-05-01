@@ -1,4 +1,5 @@
 from scipy.linalg import block_diag
+import scipy
 import mlrfit as mf
 import numpy as np
 
@@ -107,21 +108,30 @@ def perm_hat_Sigma(F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict, ranks:np
         return perm_hat_Sigma
 
 
-def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart):
+def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors):
     """
         Average log-likelihood of observed data
     """
     N, n = Y.shape
-    # Compute permuted hat_Sigma with each Sigma_level being block diagonal matrix
-    Sigma = perm_hat_Sigma(F0, D0, F_hpart, ranks)
-    (sign, logabsdet) = np.linalg.slogdet(Sigma)
-    assert sign == 1, print(sign, logabsdet, np.linalg.det(Sigma))
+    rescaled_sparse_F = mf.convert_compressed_to_sparse(np.power(D0, -0.5)[:, np.newaxis] * F0, 
+                                             F_hpart, 
+                                             ranks[:-1])
+    try:
+        sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors-1, return_singular_vectors=False, which='LM')
+    except:
+        sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors-1, return_singular_vectors=False, which='LM', tol=1e-5)
+    try:
+        last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=1, return_singular_vectors=False, which='SM')
+    except:
+        last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=1, return_singular_vectors=False, which='SM', tol=1e-5)
+
+    logdet = np.log(D0).sum() + np.log(sigmas**2 + 1).sum() + np.log(last_sigma**2 + 1).sum()
+
     Sigma_inv_Yt = np.zeros(Y.T.shape)
     for j in range(N):
         Sigma_inv_Yt[:, j:j+1] = iterative_refinement(ranks, Y.T[:, j:j+1], F0, D0, F_hpart, 
                                                          eps=1e-12, max_iter=20, printing=False)
     # trace(Sigma^{-1}Y^T Y)
     tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
-    obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * (logabsdet) - 0.5 * tr_Sigma_inv_YtY
-    # obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * fast_logdet(Sigma) - 0.5 * tr_Sigma_inv_YtY
+    obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * (logdet) - 0.5 * tr_Sigma_inv_YtY 
     return obj / N

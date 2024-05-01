@@ -157,7 +157,7 @@ def em_algorithm(n, Y, part_sizes, F_hpart, row_selectors, si_groups, ranks, max
             obj = loglikelihood_value(Sigma0, lu, piv, Y)
             loglikelihoods += [obj]
             if printing and t % freq == 0:
-                print(f"{t=}, {obj=}")
+                print(f"{t=}, {obj=}, {D0.min()=}, {D0.max()=}")
             F1 = EM_get_F(F0, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_groups)
             D1 = EM_get_D(F0, F1, lu, piv, Y, ranks, part_sizes, F_hpart, row_selectors, si_groups)
             F0, D0 = F1, D1

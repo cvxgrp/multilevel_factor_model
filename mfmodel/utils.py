@@ -82,6 +82,19 @@ def generate_mlr_model(n, hpart, ranks, signal_to_noise, debug=False):
     return true_mlr, true_sparse_F, true_D_noise
 
 
+def sample_data(nsamples, mfm_Sigma):
+    """
+    Return C: n x nsamples, where features in C are in general order
+    ie, to get groups apply permutation in mfm_Sigma.pi
+    """
+    s = mfm_Sigma.num_factors()
+    n = mfm_Sigma.F.shape[0]
+    Z = np.random.randn(s, nsamples)
+    E = np.sqrt(mfm_Sigma.D)[:, None] * np.random.randn(n, nsamples)
+    C = mfm_Sigma.F_matvec(Z) + E
+    return C[mfm_Sigma.pi_inv, :]
+
+
 def generate_data(true_sparse_F, D_noise, nsamples, true_mlr):
     """
     Return C: n x nsamples, where features in C are in general order

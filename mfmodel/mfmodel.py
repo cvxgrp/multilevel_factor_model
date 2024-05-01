@@ -58,6 +58,7 @@ class MFModel:
             _, C = low_rank_approx(Y, dim=ranks[:-1].sum(), symm=False)
             F = C / np.sqrt(N)
             D = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - self.diag_sparse_FFt(F, hpart, ranks), 1e-4)
+        self.F, self.D = F, D
         return F, D
     
 
@@ -93,6 +94,23 @@ class MFModel:
                 res[r1:r2] += self.F[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
                                     (self.F[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
         return res[self.pi_inv]
+
+
+    def F_matvec(self, z):
+        # Compute F @ z, permuted
+        if len(z.shape) == 1: z = z.reshape(-1, 1)
+        res = np.zeros((self.F.shape[0], z.shape[1]))
+        count = 0
+        for level in range(len(self.hpart["lk"])):
+            lk = self.hpart["lk"][level]
+            num_blocks = lk.size - 1 
+            for block in range(num_blocks):
+                r1, r2 = lk[block], lk[block+1]
+                c1, c2 = self.ranks[:level].sum(), self.ranks[:level+1].sum()
+                res[r1:r2] += self.F[r1:r2, c1:c2] @ z[count: count + self.ranks[level]]
+                count += self.ranks[level]
+        # assert count == self.num_factors()
+        return res
     
 
     def solve(self, v, eps=1e-9, max_iter=20, printing=False):

@@ -41,6 +41,13 @@ def mult_blockdiag_refined_AB(A, lk_A, B, lk_B):
 
 
 def fast_SMW_inverse(ranks, v0, F_Lm1, D, F_hpart):
+    sqrt_D = np.power(D, -0.5)[:, np.newaxis]
+    res = fast_SMW_inverse_basic(ranks, sqrt_D[F_hpart['pi_inv']] * v0, 
+                                sqrt_D * F_Lm1, np.ones(D.size), F_hpart)
+    return sqrt_D[F_hpart['pi_inv']] * res
+
+
+def fast_SMW_inverse_basic(ranks, v0, F_Lm1, D, F_hpart):
     pi = F_hpart['pi']
     if "pi_inv" not in F_hpart:
         pi_inv, _ = mf.inv_permutation(pi, pi)
