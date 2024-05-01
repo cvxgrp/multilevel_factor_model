@@ -108,7 +108,7 @@ def perm_hat_Sigma(F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict, ranks:np
         return perm_hat_Sigma
 
 
-def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors):
+def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-6):
     """
         Average log-likelihood of observed data
     """
@@ -117,13 +117,13 @@ def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors):
                                              F_hpart, 
                                              ranks[:-1])
     try:
-        sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors-1, return_singular_vectors=False, which='LM')
+        sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors//2, return_singular_vectors=False, which='LM', tol=tol1)
     except:
-        sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors-1, return_singular_vectors=False, which='LM', tol=1e-5)
+        sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors//2, return_singular_vectors=False, which='LM', tol=1e-5)
     try:
-        last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=1, return_singular_vectors=False, which='SM')
+        last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=num_factors-num_factors//2, return_singular_vectors=False, which='SM', tol=tol2)
     except:
-        last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=1, return_singular_vectors=False, which='SM', tol=1e-5)
+        last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=num_factors-num_factors//2, return_singular_vectors=False, which='SM', tol=1e-5)
 
     logdet = np.log(D0).sum() + np.log(sigmas**2 + 1).sum() + np.log(last_sigma**2 + 1).sum()
 
