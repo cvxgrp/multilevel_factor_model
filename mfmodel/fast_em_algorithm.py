@@ -108,11 +108,18 @@ def perm_hat_Sigma(F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict, ranks:np
         return perm_hat_Sigma
 
 
-def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-6):
+def fast_exp_true_loglikelihood_value(F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8):
     """
-        Average log-likelihood of observed data
+        Expected log-likelihood under the true model
     """
-    N, n = Y.shape
+    n = F0.shape[0]
+    logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)    
+
+    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * logdet - n/2
+    return obj
+
+
+def fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8):
     rescaled_sparse_F = mf.convert_compressed_to_sparse(np.power(D0, -0.5)[:, np.newaxis] * F0, 
                                              F_hpart, 
                                              ranks[:-1])
@@ -124,8 +131,19 @@ def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-8, 
         last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=num_factors-num_factors//2, return_singular_vectors=False, which='SM', tol=tol2)
     except:
         last_sigma = scipy.sparse.linalg.svds(rescaled_sparse_F, k=num_factors-num_factors//2, return_singular_vectors=False, which='SM', tol=1e-5)
-
+    assert last_sigma.size + sigmas.size == num_factors and num_factors == rescaled_sparse_F.shape[1]
+    del rescaled_sparse_F
+    
     logdet = np.log(D0).sum() + np.log(sigmas**2 + 1).sum() + np.log(last_sigma**2 + 1).sum()
+    return logdet
+
+
+def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, tol2=1e-7):
+    """
+        Average log-likelihood of observed data
+    """
+    N, n = Y.shape
+    logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)  
 
     Sigma_inv_Yt = np.zeros(Y.T.shape)
     for j in range(N):
