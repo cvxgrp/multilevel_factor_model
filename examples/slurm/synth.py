@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description='Solve a problem based on rank and 
 parser.add_argument('--slurm', type=int, default=0)
 args = parser.parse_args()
 
-n = [10**4, 5*10**4, 10**5][args.slurm - 1]
+n = [5*10**3, 10**4, 5*10**4, 10**5][args.slurm - 1]
 
 
 mtype = "large_smfm_n%d"%n
@@ -34,10 +34,10 @@ mtype = "large_smfm_n%d"%n
 signal_to_noise = 4
 
 
-L = 5
+L = 6
 
 
-ranks = np.array([30, 20, 10, 5, 1])
+ranks = np.array([30, 20, 10, 5, 2, 1])
 rank = ranks.sum()
 
 nsamples = rank * 5
@@ -45,7 +45,7 @@ nsamples
 
 pi_rows = np.random.permutation(n)
 hpart = {'rows':{'pi':pi_rows, 'lk':[]}, 'cols':{'pi':pi_rows, 'lk':[]}} 
-for ngroups in [2, 5, 9, 17, n+1]:
+for ngroups in [2, 5, 9, 17, 33, n+1]:
        hpart['rows']['lk'] += [ np.linspace(0, n, ngroups, endpoint=True, dtype=int)]
 hpart['rows']['lk'][1] = np.delete(hpart['rows']['lk'][1], -2)
 hpart['rows']['lk'][2] = np.delete(hpart['rows']['lk'][2], -4)

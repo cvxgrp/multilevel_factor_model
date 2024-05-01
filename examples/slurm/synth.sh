@@ -14,7 +14,7 @@ RANK_PARAM=$SLURM_ARRAY_TASK_ID
 
 hostname
 srun hostname
-cd /home/users/tetianap/lr_distributed_routing/examples/scripts
+cd /home/users/tetianap/multilevel_factor_model/examples/slurm
 source /home/groups/boyd/tetianap/anaconda3/bin/activate mlr
 
 python -u synth.py --slurm $RANK_PARAM
