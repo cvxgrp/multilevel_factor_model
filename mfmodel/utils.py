@@ -122,6 +122,11 @@ def valid_hpart(hpart):
         assert np.in1d(hpart['rows']['lk'][level], hpart['rows']['lk'][level+1]).all()
     for level in range(len(hpart["cols"]["lk"])-1):
         assert np.in1d(hpart['cols']['lk'][level], hpart['cols']['lk'][level+1]).all()
+
+
+def valid_F_hpart(hpart):
+    for level in range(len(hpart["lk"])-1):
+        assert np.in1d(hpart['lk'][level], hpart['lk'][level+1]).all()
         
 
 def row_col_selections(hpart, return_groups=False):

@@ -1,7 +1,7 @@
 import numpy as np
 import random
 
-import timeit, warnings, argparse, os
+import timeit, warnings, argparse, os, glob
 
 import mfmodel as mfm
 import numba as nb
@@ -43,22 +43,22 @@ rank = ranks.sum()
 nsamples = rank * 5
 nsamples
 
-pi_rows = np.random.permutation(n)
-hpart = {'rows':{'pi':pi_rows, 'lk':[]}, 'cols':{'pi':pi_rows, 'lk':[]}} 
 
-for ngroups in [2, 5, 9, 17, 33, n+1]:
-       hpart['rows']['lk'] += [ np.linspace(0, n, ngroups, endpoint=True, dtype=int)]
-hpart['rows']['lk'][1] = np.delete(hpart['rows']['lk'][1], -2)
-hpart['rows']['lk'][2] = np.delete(hpart['rows']['lk'][2], -4)
-hpart['cols']['lk'] = hpart['rows']['lk']
-part_sizes = mfm.print_hpart_numgroups(hpart)
-mfm.valid_hpart(hpart)
+file_name = os.path.join("/home/groups/boyd/tetianap/mfm", 'outputs/%s_rank%d_L%d.pickle' % (mtype, rank, L))
+with open(file_name, 'rb') as handle:
+    d1 = pickle.load(handle)
+    F0 = d1["F"]
+    D0 = d1["D"]
+    true_F = d1["true_F"]
+    true_D = d1["true_D"]
+    loglikelihoods = d1["ll"]
+    true_ll = d1["true_ll"]
+    F_hpart = d1["hpart"]
+
+mfm.valid_F_hpart(F_hpart)
 
 
-
-F_hpart = {"pi": hpart['rows']["pi"], "lk": hpart['rows']["lk"][:-1]}
-true_mfm = mfm.MFModel()
-true_mfm = mfm.generate_mfmodel(true_mfm, n, F_hpart, ranks, signal_to_noise, debug=False)
+true_mfm = mfm.MFModel(hpart=F_hpart, F=true_F, D=true_D)
 F_hpart["pi_inv"] = true_mfm.pi_inv
 
 print(f"{n=}, {true_mfm.num_factors()=}, {L=}, {ranks.sum()=}")
@@ -81,22 +81,19 @@ true_train_obj = mfm.fast_loglikelihood_value(true_mfm.F, true_mfm.D, Y, ranks, 
                                            tol1=1e-5, tol2=1e-5)
 exp_true_ll = mfm.fast_exp_true_loglikelihood_value(true_mfm.F, true_mfm.D, ranks, permuted_F_hpart, true_mfm.num_factors(),
                                            tol1=1e-12, tol2=1e-12)
+print(f"True: {true_ll}")
 true_ll = {"train":true_train_obj, "exp":exp_true_ll}
 print(f"True: {true_ll}")
 
 
-mfm_Sigma = mfm.MFModel(hpart=F_hpart, ranks=ranks)
-mfm_Sigma.init_FD(ranks, F_hpart, init_type="Y", Y=Y)
-F0, D0 = mfm_Sigma.F, mfm_Sigma.D
+mfm_Sigma = mfm.MFModel(hpart=F_hpart, ranks=ranks, F=F0, D=D0)
 
 
 # script_dir = os.getcwd()
 script_dir = "/home/groups/boyd/tetianap/mfm"
 # parent_dir = os.path.dirname(script_dir)
-output_path = os.path.join(script_dir, 'outputs/%s_rank%d_L%d.pickle' % (mtype, rank, L))
+output_path = os.path.join(script_dir, 'outputs/%s_rank%d_L%d_s%d.pickle' % (mtype, rank, L, mfm_Sigma.num_factors()))
 
-
-loglikelihoods = [-np.inf]
 N = Y.shape[0]
 eps = 1e-12
 for t in range(100):
