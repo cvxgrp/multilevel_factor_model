@@ -58,13 +58,18 @@ def fast_SMW_inverse_basic(ranks, v0, F_Lm1, D, F_hpart):
     prev_l_recurrence = (1/D[:, np.newaxis]) * v_F_Lm1
     n = v.size
     L = len(F_hpart['lk']) + 1
-    for level in reversed(range(1, L-1)):
+    for level in reversed(range(0, L-1)):
         pl = F_hpart['lk'][level].size - 1
         rl = ranks[level]
         # M0 same sparsity as Fl
         M0 = prev_l_recurrence[:, -ranks[level]:]
         # M1 = M0.T @ rec_term, same sparsity as rec_term
         M1 = np.zeros((rl * pl, 1 + ranks[:level].sum()))
+        if level == 0:
+            M1[:, :1] = mult_blockdiag_refined_AtB(M0, 
+                                                        F_hpart['lk'][level], 
+                                                        v.reshape(-1, 1), 
+                                                        F_hpart['lk'][0])
         for lp in range(level):
             if lp == 0:
                 M1[:, :1] = mult_blockdiag_refined_AtB(M0, 
@@ -88,6 +93,11 @@ def fast_SMW_inverse_basic(ranks, v0, F_Lm1, D, F_hpart):
         del FlTM0
         # M3 = M2 @ M1, same sparsity as M1
         M3 = np.zeros((rl * pl, 1 + ranks[:level].sum()))
+        if level == 0:
+            M3[:, :1] = mult_blockdiag_refined_AtB(M2, 
+                                                    np.linspace(0, pl*rl, num=pl+1, endpoint=True, dtype=int), 
+                                                    M1[:, :1], 
+                                                    np.linspace(0, pl*rl, num=pl+1, endpoint=True, dtype=int))
         for lp in range(level):
             if lp == 0:
                 M3[:, :1] = mult_blockdiag_refined_AtB(M2, 
@@ -101,6 +111,11 @@ def fast_SMW_inverse_basic(ranks, v0, F_Lm1, D, F_hpart):
         del M1, M2
         # M4 = M0 @ M3, same sparsity as current rec_term
         M4 = np.zeros((n, 1 + ranks[:level].sum()))
+        if level == 0:
+            M4[:, :1] = mult_blockdiag_refined_AB(M0, 
+                                                F_hpart["lk"][level], 
+                                                M3[:, :1], 
+                                                np.linspace(0, pl*rl, num=pl+1, endpoint=True, dtype=int))
         for lp in range(level):
             if lp == 0:
                 M4[:, :1] = mult_blockdiag_refined_AB(M0, 
@@ -112,36 +127,9 @@ def fast_SMW_inverse_basic(ranks, v0, F_Lm1, D, F_hpart):
                                                                                         M3[:,1+ranks[:lp].sum():1+ranks[:lp+1].sum()], 
                                                                                         M1_lks[lp])
         del M0, M3
-        # M5 
+        # M5  
         prev_l_recurrence = prev_l_recurrence[:, :1+ranks[:level].sum()] - M4
         del M4
-    # final
-    level = 0
-    pl = F_hpart['lk'][level].size - 1
-    rl = ranks[level]
-    # M0 same sparsity as Fl
-    M0 = prev_l_recurrence[:, -ranks[level]:]
-    # M1 = M0.T @ rec_term, same sparsity as rec_term
-    M1 = mult_blockdiag_refined_AtB(M0, 
-                                    F_hpart['lk'][level], 
-                                    v[:, np.newaxis], 
-                                    F_hpart['lk'][0])
-    # M2 = (I + Fl^T M0)^{-1}, blockdiagonal with pl blocks of size (rl x rl)
-    FlTM0 = mult_blockdiag_refined_AtB(F_Lm1[:, :ranks[:level+1].sum()], 
-                                        F_hpart['lk'][level], 
-                                        M0, 
-                                        F_hpart['lk'][level])
-    M2 = pinvh(np.eye(rl) + FlTM0)
-    del FlTM0
-    # M3 = M2 @ M1, same sparsity as M1
-    M3 = M2 @ M1
-    del M2, M1
-    # M4 = M0 @ M3, same sparsity as current rec_term
-    M4 = M0 @ M3
-    del M0, M3
-    # M5 
-    prev_l_recurrence = prev_l_recurrence[:, :1] - M4 
-    del M4
     return prev_l_recurrence[pi_inv]
 
 

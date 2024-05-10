@@ -19,7 +19,8 @@ Multilevel Factor Model class
 """
 class MFModel:
     def __init__(self, hpart:Optional[mf.EntryHpartDict ]=None, ranks:Optional[np.ndarray]=None, \
-                       F:Optional[np.ndarray]=None, D:Optional[np.ndarray]=None, debug=False):
+                       F:Optional[np.ndarray]=None, D:Optional[np.ndarray]=None,
+                       H:Optional[np.ndarray]=None, inv_D:Optional[np.ndarray]=None, debug=False):
         """
         Use provided F and D as a warm start
         hpartition: dict
@@ -32,6 +33,8 @@ class MFModel:
         """
         self.F = F
         self.D = D
+        self.H = H 
+        self.inv_D = inv_D
         self.ranks = ranks
         self.debug = debug
         if hpart is not None:
@@ -126,7 +129,15 @@ class MFModel:
     
     def matrix(self):
         # return \Sigma matrix
-        perm_hat_A = self._compute_perm_hat_A(self.F, self.D, self.hpart, self.ranks)
+        perm_hat_A = self._compute_perm_hat_A(self.F, self.F, self.D, self.hpart, self.ranks)
+        # pi_inv to permute \hat \Sigma_l from block diagonal in order approximating \Sigma
+        hat_A = perm_hat_A[self.pi_inv, :][:, self.pi_inv]
+        return hat_A
+    
+
+    def inv(self):
+        # return \Sigma matrix
+        perm_hat_A = self._compute_perm_hat_A(-self.H, self.H, self.inv_D, self.hpart, self.ranks)
         # pi_inv to permute \hat \Sigma_l from block diagonal in order approximating \Sigma
         hat_A = perm_hat_A[self.pi_inv, :][:, self.pi_inv]
         return hat_A
@@ -136,21 +147,82 @@ class MFModel:
         return (self.F.shape[0], self.F.shape[0])
 
 
-    def _compute_perm_hat_A(self, F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict , ranks:np.ndarray):
+    def _compute_perm_hat_A(self, F1:np.ndarray, F2:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict , ranks:np.ndarray):
         """
         Compute permuted hat_A with each Sigma_level being block diagonal matrix 
         """
         num_levels = ranks.size
         perm_hat_A = np.diag(D)
         for level in range(num_levels - 1):
-            perm_hat_A += self._block_diag_FFt(level, hpart, F[:,ranks[:level].sum() : ranks[:level+1].sum()])
+            perm_hat_A += self._block_diag_FFt(level, hpart, F1[:,ranks[:level].sum() : ranks[:level+1].sum()],
+                                               F2[:,ranks[:level].sum() : ranks[:level+1].sum()])
         return perm_hat_A
 
     
-    def _block_diag_FFt(self, level:int, hpart:mf.EntryHpartDict, F_level:np.ndarray):
+    def _block_diag_FFt(self, level:int, hpart:mf.EntryHpartDict, F1_level:np.ndarray, F2_level:np.ndarray):
         Sigma_level = []
         num_blocks = len(hpart['lk'][level])-1
         for block in range(num_blocks):
             r1, r2 = hpart['lk'][level][block], hpart['lk'][level][block+1]
-            Sigma_level += [ F_level[r1:r2] @ F_level[r1:r2].T ]
+            Sigma_level += [ F1_level[r1:r2] @ F2_level[r1:r2].T ]
         return block_diag(*Sigma_level)
+    
+
+    def inv_coefficients(self):
+        prev_l_recurrence = (1/self.D[:, np.newaxis]) * self.F
+        n = self.F.shape[0]
+        H_Lm1 = np.zeros(self.F.shape)
+        L = len(self.hpart['lk']) + 1
+        for level in reversed(range(0, L-1)):
+            pl = self.hpart['lk'][level].size - 1
+            rl = self.ranks[level]
+            # M0 same sparsity as Fl
+            M0 = prev_l_recurrence[:, -self.ranks[level]:]
+            # M1 = M0.T @ rec_term, same sparsity as rec_term
+            M1 = np.zeros((rl * pl, self.ranks[:level].sum()))
+            for lp in range(level):
+                M1[:, self.ranks[:lp].sum() : self.ranks[:lp+1].sum()] = mult_blockdiag_refined_AtB(M0, 
+                                                                                    self.hpart['lk'][level], 
+                                                                                    self.F[:, self.ranks[:lp].sum():self.ranks[:lp+1].sum()], 
+                                                                                    self.hpart['lk'][lp])
+            M1_lks = [np.searchsorted(self.hpart['lk'][level], lk_B, side='left') * rl for lk_B in self.hpart['lk'][:level]]
+            # M2 = (I + Fl^T M0)^{-1}, blockdiagonal with pl blocks of size (rl x rl)
+            FlTM0 = mult_blockdiag_refined_AtB(self.F[:, self.ranks[:level].sum() : self.ranks[:level+1].sum()], 
+                                            self.hpart['lk'][level], 
+                                            M0, 
+                                            self.hpart['lk'][level])
+            M2 = np.zeros((pl*rl, rl))
+            sqrt_M2 = np.zeros((pl*rl, rl))
+            for k in range(pl):
+                np.fill_diagonal(FlTM0[k*rl : (k+1)*rl], FlTM0[k*rl : (k+1)*rl].diagonal() + 1)
+                eigvals, eigvecs = np.linalg.eigh(FlTM0[k*rl : (k+1)*rl])
+                sqrt_M2[k*rl : (k+1)*rl] = ((1 / np.sqrt(eigvals)) * eigvecs) @ eigvecs.T
+                M2[k*rl : (k+1)*rl] = ((1/eigvals) * eigvecs) @ eigvecs.T
+                del eigvals, eigvecs
+            del FlTM0
+            H_Lm1[:, self.ranks[:level].sum():self.ranks[:level+1].sum()] = mult_blockdiag_refined_AB(M0, 
+                                                                                            self.hpart['lk'][level],
+                                                                                            sqrt_M2, 
+                                                                                            np.linspace(0, pl*rl, num=pl+1, endpoint=True, dtype=int))
+            del sqrt_M2
+            # M3 = M2 @ M1, same sparsity as M1
+            M3 = np.zeros((rl * pl, self.ranks[:level].sum()))
+            for lp in range(level):
+                M3[:, self.ranks[:lp].sum():self.ranks[:lp+1].sum()] = mult_blockdiag_refined_AtB(M2, 
+                                                                                            np.linspace(0, pl*rl, num=pl+1, endpoint=True, dtype=int), 
+                                                                                            M1[:, self.ranks[:lp].sum():self.ranks[:lp+1].sum()], 
+                                                                                            M1_lks[lp])
+            del M1, M2
+            # M4 = M0 @ M3, same sparsity as current rec_term
+            M4 = np.zeros((n, self.ranks[:level].sum()))
+            for lp in range(level):
+                M4[:, self.ranks[:lp].sum() : self.ranks[:lp+1].sum()] = mult_blockdiag_refined_AB(M0, 
+                                                                                            self.hpart["lk"][level], 
+                                                                                            M3[:, self.ranks[:lp].sum():self.ranks[:lp+1].sum()], 
+                                                                                            M1_lks[lp])
+            del M0, M3
+            # M5  
+            prev_l_recurrence = prev_l_recurrence[:, :self.ranks[:level].sum()] - M4
+            del M4
+        self.H = H_Lm1
+        self.inv_D = 1/self.D 

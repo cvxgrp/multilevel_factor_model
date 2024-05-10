@@ -58,7 +58,7 @@ with open(file_name, 'rb') as handle:
 mfm.valid_F_hpart(F_hpart)
 
 
-true_mfm = mfm.MFModel(hpart=F_hpart, F=true_F, D=true_D)
+true_mfm = mfm.MFModel(hpart=F_hpart, F=true_F, D=true_D, ranks=ranks)
 F_hpart["pi_inv"] = true_mfm.pi_inv
 
 print(f"{n=}, {true_mfm.num_factors()=}, {L=}, {ranks.sum()=}")
@@ -73,6 +73,9 @@ Z = (C - C.mean(axis=1, keepdims=True))[F_hpart["pi"], :]
 Y = Z.T
 N = Y.shape[0]
 
+hpart = {"rows":{"pi":F_hpart["pi"], 
+                 "lk":F_hpart["lk"] + [ np.linspace(0, n, n+1, endpoint=True, dtype=int)]}}
+hpart["cols"] = hpart['rows']
 permuted_F_hpart = {"pi_inv":np.arange(n), "pi":np.arange(n), "lk":F_hpart["lk"]}
 row_selectors, si_groups, F_hpart, groups_all = mfm.row_col_selections(hpart, return_groups=True)
 
