@@ -174,3 +174,11 @@ def group_to_indices(group, part_sizes, ranks):
     indices = np.concatenate(indices, axis=0)
     assert indices.size == ranks[:-1].sum()
     return indices
+
+
+def get_sparse_F_si_col_sparsity(F_compressed, ranks, F_hpart, group):
+    res = np.zeros(F_compressed.shape)
+    for level, gi in enumerate(group):
+        r1, r2 = F_hpart["lk"][level][gi], F_hpart["lk"][level][gi+1]
+        res[r1:r2, ranks[:level].sum() : ranks[:level+1].sum()] = F_compressed[r1:r2, ranks[:level].sum() : ranks[:level+1].sum()]
+    return res

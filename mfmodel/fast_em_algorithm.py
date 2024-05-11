@@ -6,16 +6,8 @@ import numpy as np
 
 from mfmodel.utils import *
 from mfmodel.inverse import *
+from mfmodel.mfmodel import *
 
-
-
-
-def get_sparse_F_si_col_sparsity(F_compressed, ranks, F_hpart, group):
-    res = np.zeros(F_compressed.shape)
-    for level, gi in enumerate(group):
-        r1, r2 = F_hpart["lk"][level][gi], F_hpart["lk"][level][gi+1]
-        res[r1:r2, ranks[:level].sum() : ranks[:level+1].sum()] = F_compressed[r1:r2, ranks[:level].sum() : ranks[:level+1].sum()]
-    return res
 
 
 def fast_EM_intermediate_matrices(F_Lm1, D, F_hpart, Y, ranks, si, si_groups, row_selectors):
@@ -24,9 +16,12 @@ def fast_EM_intermediate_matrices(F_Lm1, D, F_hpart, Y, ranks, si, si_groups, ro
     tilde_F_ci = get_sparse_F_si_col_sparsity(F_Lm1, ranks, F_hpart, si_groups[si]) # n x (r-1)
     assert tilde_F_ci.shape == (n, ranks[:-1].sum())
     Sigma0_inv_F_ci = np.zeros(tilde_F_ci.shape)
+    true_mfm = MFModel(hpart=F_hpart, ranks=ranks, F=F_Lm1, D=D)
+    true_mfm.inv_coefficients() 
     for j in range(tilde_F_ci.shape[1]):
-        Sigma0_inv_F_ci[:, j:j+1] = iterative_refinement(ranks, tilde_F_ci[:, j:j+1], F_Lm1, D, F_hpart, 
-                                                         eps=1e-12, max_iter=20, printing=False)
+        Sigma0_inv_F_ci[:, j:j+1] = true_mfm.solve(tilde_F_ci[:, j:j+1], eps=1e-12, max_iter=20, printing=False)
+        # Sigma0_inv_F_ci[:, j:j+1] = iterative_refinement(ranks, tilde_F_ci[:, j:j+1], F_Lm1, D, F_hpart, 
+        #                                                  eps=1e-12, max_iter=20, printing=False)
     F_ciT_Sigma0_inv_F_ci = tilde_F_ci.T @ Sigma0_inv_F_ci # (r-1) x (r-1)
     del tilde_F_ci
     Y_Sigma0_inv_F_ci = Y @ Sigma0_inv_F_ci # N x (r-1)
@@ -146,9 +141,13 @@ def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, 
     logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)  
 
     Sigma_inv_Yt = np.zeros(Y.T.shape)
+
+    true_mfm = MFModel(hpart=F_hpart, ranks=ranks, F=F0, D=D0)
+    true_mfm.inv_coefficients() 
     for j in range(N):
-        Sigma_inv_Yt[:, j:j+1] = iterative_refinement(ranks, Y.T[:, j:j+1], F0, D0, F_hpart, 
-                                                         eps=1e-12, max_iter=20, printing=False)
+        Sigma_inv_Yt[:, j:j+1] = true_mfm.solve(Y.T[:, j:j+1], eps=1e-12, max_iter=20, printing=False)
+        # Sigma_inv_Yt[:, j:j+1] = iterative_refinement(ranks, Y.T[:, j:j+1], F0, D0, F_hpart, 
+        #                                                  eps=1e-12, max_iter=20, printing=False)
     # trace(Sigma^{-1}Y^T Y)
     tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
     obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * (logdet) - 0.5 * tr_Sigma_inv_YtY 
