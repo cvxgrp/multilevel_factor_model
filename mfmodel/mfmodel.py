@@ -112,6 +112,21 @@ class MFModel:
                     res[r1:r2] -= self.H[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
                                         (self.H[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
         return res[self.pi_inv]
+    
+
+    def matvec_BCt(self, x0, B, C, D):
+        # Compute \tilde B @ \tilde C^T @ x0
+        if len(x0.shape) == 1: x0 = x0.reshape(-1, 1)
+        x = x0[self.pi]
+        res = D[:, np.newaxis] * x
+        for level in range(len(self.hpart["lk"])):
+            lk = self.hpart["lk"][level]
+            num_blocks = lk.size - 1 
+            for block in range(num_blocks):
+                r1, r2 = lk[block], lk[block+1]
+                res[r1:r2] += B[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
+                                    (C[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
+        return res[self.pi_inv]
 
 
     def F_matvec(self, z):

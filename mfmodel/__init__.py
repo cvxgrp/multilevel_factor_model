@@ -6,3 +6,4 @@ from mfmodel.fast_em_algorithm import *
 from mfmodel.utils import *
 from mfmodel.inverse import *
 from mfmodel.mfmodel import *
+from mfmodel.mlr_matmul import *

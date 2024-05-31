@@ -177,6 +177,9 @@ def group_to_indices(group, part_sizes, ranks):
 
 
 def get_sparse_F_si_col_sparsity(F_compressed, ranks, F_hpart, group):
+    """
+    Return F S_ci^T for a row sparsity si
+    """
     res = np.zeros(F_compressed.shape)
     for level, gi in enumerate(group):
         r1, r2 = F_hpart["lk"][level][gi], F_hpart["lk"][level][gi+1]

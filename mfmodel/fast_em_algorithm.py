@@ -25,10 +25,10 @@ def fast_EM_intermediate_matrices(F_Lm1, D, F_hpart, Y, ranks, si, si_groups, ro
     F_ciT_Sigma0_inv_F_ci = tilde_F_ci.T @ Sigma0_inv_F_ci # (r-1) x (r-1)
     del tilde_F_ci
     Y_Sigma0_inv_F_ci = Y @ Sigma0_inv_F_ci # N x (r-1)
-    ci_B_ci = N * (np.eye(ranks[:-1].sum()) - F_ciT_Sigma0_inv_F_ci) + Y_Sigma0_inv_F_ci.T @ Y_Sigma0_inv_F_ci
+    ci_W_ci = N * (np.eye(ranks[:-1].sum()) - F_ciT_Sigma0_inv_F_ci) + Y_Sigma0_inv_F_ci.T @ Y_Sigma0_inv_F_ci
     del F_ciT_Sigma0_inv_F_ci
-    ri_At_ci_t = Y_Sigma0_inv_F_ci.T @ Y[:, r1:r2] # (r-1) x (r2-r1)
-    return ri_At_ci_t, ci_B_ci, r1, r2
+    ri_Vt_ci_t = Y_Sigma0_inv_F_ci.T @ Y[:, r1:r2] # (r-1) x (r2-r1)
+    return ri_Vt_ci_t, ci_W_ci, r1, r2
 
 
 def fast_EM_get_F(F0, D0, Y, ranks, F_hpart, row_selectors, si_groups):
@@ -39,8 +39,8 @@ def fast_EM_get_F(F0, D0, Y, ranks, F_hpart, row_selectors, si_groups):
     num_sparsities = row_selectors.size - 1
     # for si in tqdm(range(num_sparsities)):
     for si in range(num_sparsities):
-        ri_At_ci_t, ci_B_ci, r1, r2 = fast_EM_intermediate_matrices(F0, D0, F_hpart, Y, ranks, si, si_groups, row_selectors)
-        F1[r1:r2, :] = np.linalg.solve(ci_B_ci, ri_At_ci_t).T
+        ri_Vt_ci_t, ci_W_ci, r1, r2 = fast_EM_intermediate_matrices(F0, D0, F_hpart, Y, ranks, si, si_groups, row_selectors)
+        F1[r1:r2, :] = np.linalg.solve(ci_W_ci, ri_Vt_ci_t).T
     return F1
 
 
@@ -53,11 +53,11 @@ def fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups):
     D1 = np.zeros(n)
     # for si in tqdm(range(num_sparsities)):
     for si in range(num_sparsities):
-        ri_At_ci_t, ci_B_ci, r1, r2 = fast_EM_intermediate_matrices(F0, D0, F_hpart, Y, ranks, si, si_groups, row_selectors)
+        ri_Vt_ci_t, ci_W_ci, r1, r2 = fast_EM_intermediate_matrices(F0, D0, F_hpart, Y, ranks, si, si_groups, row_selectors)
         ri_F1_ciT = F1[r1:r2]
         D1[r1:r2] = (1/N) * ( np.einsum('ij,ji->i', Y[:, r1:r2].T, Y[:, r1:r2]) \
-                            - 2 * np.einsum('ij,ji->i', ri_F1_ciT, ri_At_ci_t) \
-                            + np.einsum('ij,jk,ki->i', ri_F1_ciT, ci_B_ci, ri_F1_ciT.T))
+                            - 2 * np.einsum('ij,ji->i', ri_F1_ciT, ri_Vt_ci_t) \
+                            + np.einsum('ij,jk,ki->i', ri_F1_ciT, ci_W_ci, ri_F1_ciT.T))
     return D1
 
 
