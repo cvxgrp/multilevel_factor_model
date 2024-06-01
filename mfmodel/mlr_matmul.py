@@ -120,9 +120,18 @@ def concatenate_factors_all_levels(B1, ranks1, B2, ranks2):
     return B, ranks
 
 
-def mlr_mlr_sum(B1, C1, ranks1, B2, C2, ranks2):
+def mlr_mlr_sum(B1, C1, ranks1, B2, C2, ranks2, hpart):
     B, ranks = concatenate_factors_all_levels(B1, ranks1, B2, ranks2)
     C, ranks = concatenate_factors_all_levels(C1, ranks1, C2, ranks2)
+    # combine factors on the last level if it is diagonal 
+    if B.shape[0] == hpart["lk"][-1].size - 1 and ranks[-1] >= 2:
+        d = np.multiply(B[:, -ranks[-1]:], C[:, -ranks[-1]:]).sum(axis=1)
+        ranks[-1] = 1
+        B = B[:, :ranks.sum()]
+        B[:, -1] = 1
+        C = C[:, :ranks.sum()]
+        C[:, -1] = d
+    assert B.shape[1] == C.shape[1] == ranks.sum()
     return B, C, ranks
 
 
