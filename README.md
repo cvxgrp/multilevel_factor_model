@@ -1,6 +1,9 @@
 
 
-# Multilevel factor models
+# Multilevel Factor Models
+
+joint work with T. Hastie and S. Boyd.
+<!-- This repository accompanies the [manuscript](XXX). -->
 
 We examine a special case of the multilevel factor model (MFM), 
 with covariance given by multilevel low rank (MLR) matrix. 
