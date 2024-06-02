@@ -6,20 +6,27 @@ from scipy.linalg import block_diag
 
 
 
-def mlr_matvec(x0, B, C, D, F_hpart, ranks, sign=1):
+def mlr_matvec(x0, B, C, hpart, ranks):
     # Compute matrix-vector with MLR matrix
     # \tilde B @ \tilde C^T @ x0
     if len(x0.shape) == 1: x0 = x0.reshape(-1, 1)
-    x = x0[F_hpart["pi"]]
-    res = D[:, np.newaxis] * x
-    for level in range(len(F_hpart["lk"])):
-        lk = F_hpart["lk"][level]
+    x = x0[hpart["pi"]]
+    if B.shape[0] == hpart["lk"][-1].size - 1:
+        d = np.multiply(B[:, -ranks[-1]:], C[:, -ranks[-1]:]).sum(axis=1)
+        L = len(hpart["lk"]) - 1
+        res = d[:, np.newaxis] * x
+    else:
+        res = np.zeros(x.shape)
+        L = len(hpart["lk"])
+ 
+    for level in range(L):
+        lk = hpart["lk"][level]
         num_blocks = lk.size - 1 
         for block in range(num_blocks):
             r1, r2 = lk[block], lk[block+1]
-            res[r1:r2] += sign * B[r1:r2, ranks[:level].sum():ranks[:level+1].sum()] @ \
+            res[r1:r2] += B[r1:r2, ranks[:level].sum():ranks[:level+1].sum()] @ \
                                 (C[r1:r2, ranks[:level].sum():ranks[:level+1].sum()].T @ x[r1:r2])
-    return res[F_hpart["pi_inv"]]
+    return res[hpart["pi_inv"]]
 
 
 def mult_blockdiag_refined_CtB(C, lk_C, B, lk_B):
@@ -62,40 +69,23 @@ def block_diag_lk_t(lk:np.array, A:np.ndarray):
         r1, r2 = lk[block], lk[block+1]
         res += [A[:, r1:r2]]
     return block_diag(*res)
-
-
-def mlr_level_matvec_base(l1, B_l1, C_l1, l2, B_l2, C_l2, hpart):
-    # Compute A_l1 @ \tilde A_l2^T 
-    assert l1 <= l2
-    B = B_l1 + 0
-    #  (r_C_l1 x num_blocks_l2 * r_B_l2)
-    C_l1t_B_l2 = mult_blockdiag_refined_CtB(C_l1, hpart['lk'][l1], 
-                                            B_l2, hpart['lk'][l2])
-    indices_Ct2B = np.searchsorted(hpart['lk'][l2], hpart['lk'][l1], side='left') * B_l2.shape[1]
-    C = mult_blockdiag_refined_BCt(C_l1t_B_l2, indices_Ct2B, 
-                                   C_l2, hpart['lk'][l2])
-    return B, C
-
-
-def mlr_level_matvec(l1, B_l1, C_l1, l2, B_l2, C_l2, hpart):
-    # Compute A_l1 @ \tilde A_l2^T 
-    if l1 <= l2:
-        return mlr_level_matvec_base(l1, B_l1, C_l1, l2, B_l2, C_l2, hpart)
-    else:
-        C, B =  mlr_level_matvec_base(l2, C_l2, B_l2, l1, C_l1, B_l1, hpart)
-        return B, C
     
 
 def mlr_level_matvec_base(l1, B_l1, C_l1, l2, B_l2, C_l2, hpart):
-    # Compute A_l1 @ \tilde A_l2^T 
+    # Compute A_l1 @ \tilde A_l2
     assert l1 <= l2
     B = B_l1 + 0
-    #  (r_C_l1 x num_blocks_l2 * r_B_l2)
-    C_l1t_B_l2 = mult_blockdiag_refined_CtB(C_l1, hpart['lk'][l1], 
-                                            B_l2, hpart['lk'][l2])
-    indices_Ct2B = np.searchsorted(hpart['lk'][l2], hpart['lk'][l1], side='left') * B_l2.shape[1]
-    C = mult_blockdiag_refined_BCt(C_l1t_B_l2, indices_Ct2B, 
-                                   C_l2, hpart['lk'][l2])
+    if hpart["lk"][l2].size-1 == C_l1.shape[0]:
+        # \tilde A_l2 is diagonal
+        d = np.multiply(B_l2, C_l2).sum(axis=1).reshape(-1, 1)
+        C = d * C_l1
+    else:
+        #  (r_C_l1 x num_blocks_l2 * r_B_l2)
+        C_l1t_B_l2 = mult_blockdiag_refined_CtB(C_l1, hpart['lk'][l1], 
+                                                B_l2, hpart['lk'][l2])
+        indices_Ct2B = np.searchsorted(hpart['lk'][l2], hpart['lk'][l1], side='left') * B_l2.shape[1]
+        C = mult_blockdiag_refined_BCt(C_l1t_B_l2, indices_Ct2B, 
+                                    C_l2, hpart['lk'][l2])
     return B, C
 
 

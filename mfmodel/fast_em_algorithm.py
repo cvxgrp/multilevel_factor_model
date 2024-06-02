@@ -10,18 +10,27 @@ from mfmodel.mfmodel import *
 
 
 
-def fast_EM_intermediate_matrices(F_Lm1, D, F_hpart, Y, ranks, si, si_groups, row_selectors):
+def fit(Y, ranks, hpart, init_type="Y", max_iter=100, eps=1e-8, printing=False, freq=10):
+    fitted_mfm = MFModel(hpart=hpart, ranks=ranks)
+    fitted_mfm.init_FD(ranks, hpart, init_type=init_type, Y=Y)
+    F0, D0 = fitted_mfm.F, fitted_mfm.D
+    n = F0.shape[0]
+    permuted_F_hpart = {"pi_inv":np.arange(n), "pi":np.arange(n), "lk":hpart["lk"]}
+    row_selectors, si_groups, _ = si_row_col(hpart)
+    F0, D0, loglikelihoods = fast_em_algorithm(Y,  F0, D0, permuted_F_hpart, row_selectors, si_groups, 
+                                               ranks, fitted_mfm.num_factors(), lls=True, max_iter=max_iter, eps=eps, printing=printing, freq=freq) 
+    return fitted_mfm, loglikelihoods
+
+
+def fast_EM_intermediate_matrices(F_Lm1, D, F_hpart, Y, ranks, si, si_groups, row_selectors, refine=False):
     r1, r2 = row_selectors[si: si+2]
     N, n = Y.shape
     tilde_F_ci = get_sparse_F_si_col_sparsity(F_Lm1, ranks, F_hpart, si_groups[si]) # n x (r-1)
     assert tilde_F_ci.shape == (n, ranks[:-1].sum())
     Sigma0_inv_F_ci = np.zeros(tilde_F_ci.shape)
     true_mfm = MFModel(hpart=F_hpart, ranks=ranks, F=F_Lm1, D=D)
-    true_mfm.inv_coefficients() 
-    for j in range(tilde_F_ci.shape[1]):
-        Sigma0_inv_F_ci[:, j:j+1] = true_mfm.solve(tilde_F_ci[:, j:j+1], eps=1e-12, max_iter=20, printing=False)
-        # Sigma0_inv_F_ci[:, j:j+1] = iterative_refinement(ranks, tilde_F_ci[:, j:j+1], F_Lm1, D, F_hpart, 
-        #                                                  eps=1e-12, max_iter=20, printing=False)
+    true_mfm.inv_coefficients(si_groups=si_groups, row_selectors=row_selectors, refine=refine) 
+    Sigma0_inv_F_ci = true_mfm.solve(tilde_F_ci)
     F_ciT_Sigma0_inv_F_ci = tilde_F_ci.T @ Sigma0_inv_F_ci # (r-1) x (r-1)
     del tilde_F_ci
     Y_Sigma0_inv_F_ci = Y @ Sigma0_inv_F_ci # N x (r-1)
@@ -61,7 +70,7 @@ def fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups):
     return D1
 
 
-def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, lls=False, max_iter=200, 
+def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, num_factors, lls=False, max_iter=200, tol1=1e-5, tol2=1e-5,
                         eps=1e-12, freq=50, printing=False):
         """
             Fast EM algorithm
@@ -72,7 +81,7 @@ def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, lls=F
         N = Y.shape[0]
         for t in range(max_iter):
                 if lls:
-                    obj = fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart)
+                    obj = fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)
                     loglikelihoods += [obj]
                 if printing and t % freq == 0:
                     print(f"{t=}, {obj=}")
@@ -103,14 +112,14 @@ def perm_hat_Sigma(F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict, ranks:np
         return perm_hat_Sigma
 
 
-def fast_exp_true_loglikelihood_value(F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8):
+def fast_exp_true_loglikelihood_value(true_F, true_D, F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8):
     """
         Expected log-likelihood under the true model
     """
     n = F0.shape[0]
     logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)    
-
-    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * logdet - n/2
+    tr_fitted_Sigma_true_Sigma = n #todo
+    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * logdet - (1/2) * tr_fitted_Sigma_true_Sigma
     return obj
 
 
@@ -133,7 +142,7 @@ def fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8)
     return logdet
 
 
-def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, tol2=1e-7):
+def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, tol2=1e-7, refine=False):
     """
         Average log-likelihood of observed data
     """
@@ -143,11 +152,8 @@ def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, 
     Sigma_inv_Yt = np.zeros(Y.T.shape)
 
     true_mfm = MFModel(hpart=F_hpart, ranks=ranks, F=F0, D=D0)
-    true_mfm.inv_coefficients() 
-    for j in range(N):
-        Sigma_inv_Yt[:, j:j+1] = true_mfm.solve(Y.T[:, j:j+1], eps=1e-12, max_iter=20, printing=False)
-        # Sigma_inv_Yt[:, j:j+1] = iterative_refinement(ranks, Y.T[:, j:j+1], F0, D0, F_hpart, 
-        #                                                  eps=1e-12, max_iter=20, printing=False)
+    true_mfm.inv_coefficients(refine=refine) 
+    Sigma_inv_Yt = true_mfm.solve(Y.T)
     # trace(Sigma^{-1}Y^T Y)
     tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
     obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * (logdet) - 0.5 * tr_Sigma_inv_YtY 

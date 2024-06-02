@@ -103,8 +103,6 @@ def generate_data(true_sparse_F, D_noise, nsamples, true_mlr):
     n, s = true_sparse_F.shape
     Z = np.random.randn(s, nsamples)
     E = np.random.multivariate_normal(np.zeros(n), np.diag(D_noise), size=nsamples).T
-    # E = np.diag(np.sqrt(D_noise)) @ np.random.randn(n, nsamples)
-    # E = np.random.randn(n, nsamples) * np.sqrt(D_noise)[:, None]
     C = true_sparse_F @ Z + E
     return C[true_mlr.pi_inv_rows, :]
 
@@ -134,31 +132,40 @@ def row_col_selections(hpart, return_groups=False):
         Define row and col selectors for each row sparsity pattern of F
     """
     num_levels = len(hpart['rows']['lk'])
-    L = num_levels - 1
-    num_sparsities = len(hpart['rows']['lk'][L - 1]) - 1
+    F_hpart = {"lk": hpart['rows']['lk'][:-1], "pi":hpart['rows']['pi']} 
+    num_sparsities = len(hpart['rows']['lk'][num_levels - 1 - 1]) - 1
     print(f"{num_levels=}, {num_sparsities=}")
+    row_selectors, si_groups, groups_all = si_row_col(F_hpart)
+    print(si_groups.shape, si_groups[-1])
+    if return_groups:
+        return row_selectors, si_groups, F_hpart, groups_all
+    else:
+        return row_selectors, si_groups, F_hpart
+    
+
+def si_row_col(F_hpart, debug=False):
+    """
+        Define row and col selectors for each row sparsity pattern of F
+    """
+    L = len(F_hpart['lk'])
     # row selector for each sparsity pattern
-    row_selectors = hpart['rows']['lk'][L - 1]
+    row_selectors = F_hpart['lk'][-1]
     # traverse hpart tree and assign to each leaf  
     # set of group indices 
     # from each level to which it belongs
     S = []
     for level in range(L):
-        num_blocks = hpart['rows']['lk'][level].size - 1
-        diff = np.diff(hpart['rows']['lk'][level])
+        num_blocks = F_hpart['lk'][level].size - 1
+        diff = np.diff(F_hpart['lk'][level])
         # for each level assign group index to each feature
         S += [np.repeat(np.arange(num_blocks), diff)]
     # n x (L-1)
     groups_all = np.stack(S, axis=1)
     # list of groups for each sparsity pattern
     si_groups = groups_all[row_selectors[:-1]]
-    assert si_groups.shape == (row_selectors.size - 1, L) == np.unique(si_groups, axis=0).shape
-    print(si_groups.shape, si_groups[-1])
-    F_hpart = {"lk": hpart['rows']['lk'][:-1], "pi":hpart['rows']['pi']} 
-    if return_groups:
-        return row_selectors, si_groups, F_hpart, groups_all
-    else:
-        return row_selectors, si_groups, F_hpart
+    if debug:
+        assert si_groups.shape == (row_selectors.size - 1, L) == np.unique(si_groups, axis=0).shape
+    return row_selectors, si_groups, groups_all
     
 
 def group_to_indices(group, part_sizes, ranks):

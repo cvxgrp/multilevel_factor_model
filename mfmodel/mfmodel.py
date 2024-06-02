@@ -9,6 +9,7 @@ import mlrfit as mf
 
 from mfmodel.utils import *
 from mfmodel.inverse import *
+from mfmodel.mlr_matmul import *
 # from mfmodel.fast_em_algorithm import *
 
 
@@ -20,7 +21,7 @@ Multilevel Factor Model class
 class MFModel:
     def __init__(self, hpart:Optional[mf.EntryHpartDict ]=None, ranks:Optional[np.ndarray]=None, \
                        F:Optional[np.ndarray]=None, D:Optional[np.ndarray]=None,
-                       H:Optional[np.ndarray]=None, inv_D:Optional[np.ndarray]=None, debug=False):
+                       debug=False):
         """
         Use provided F and D as a warm start
         hpartition: dict
@@ -33,8 +34,7 @@ class MFModel:
         """
         self.F = F
         self.D = D
-        self.H = H 
-        self.inv_D = inv_D
+        self.inv_B, self.inv_C, self.si_groups, self.row_selectors = None, None, None, None
         self.ranks = ranks
         self.debug = debug
         if hpart is not None:
@@ -71,8 +71,22 @@ class MFModel:
     
 
     def diag_inv(self):
-        # return diagonal of Sigma
-        return (-self.diag_sparse_FFt(self.H, self.hpart, self.ranks) + self.inv_D)[self.pi_inv]
+        # return diagonal of Sigma^{-1}
+        return self.diag_sparse_BCt(self.inv_B, self.inv_C, self.inv_hpart, self.inv_ranks)[self.pi_inv]
+    
+
+    def diag_sparse_BCt(self, B_compressed, C_compressed, hpart, ranks):
+        # F_compressed: n x (r-1) 
+        # return diag(\tilde F \tilde F^T) without permutation
+        res = np.zeros(hpart['pi'].size)
+        for level in range(len(hpart["lk"])):
+            lk = hpart["lk"][level]
+            num_blocks = lk.size - 1 
+            for block in range(num_blocks):
+                r1, r2 = lk[block], lk[block+1]
+                res[r1:r2] += np.einsum('ij,ji->i', B_compressed[r1:r2, ranks[:level].sum():ranks[:level+1].sum()],
+                                                    C_compressed[r1:r2, ranks[:level].sum():ranks[:level+1].sum()].T)
+        return res
 
 
     def diag_sparse_FFt(self, F_compressed, hpart, ranks):
@@ -89,45 +103,22 @@ class MFModel:
         return res
 
 
-    def matvec(self, x0, sign=1):
+    def matvec(self, x0):
         # Compute \Sigma @ x0
         if len(x0.shape) == 1: x0 = x0.reshape(-1, 1)
         x = x0[self.pi]
-        if sign == 1:
-            res = self.D[:, np.newaxis] * x
-            for level in range(len(self.hpart["lk"])):
-                lk = self.hpart["lk"][level]
-                num_blocks = lk.size - 1 
-                for block in range(num_blocks):
-                    r1, r2 = lk[block], lk[block+1]
-                    res[r1:r2] += self.F[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
-                                        (self.F[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
-        elif sign == -1:
-            res = self.inv_D[:, np.newaxis] * x
-            for level in range(len(self.hpart["lk"])):
-                lk = self.hpart["lk"][level]
-                num_blocks = lk.size - 1 
-                for block in range(num_blocks):
-                    r1, r2 = lk[block], lk[block+1]
-                    res[r1:r2] -= self.H[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
-                                        (self.H[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
-        return res[self.pi_inv]
-    
-
-    def matvec_BCt(self, x0, B, C, D):
-        # Compute \tilde B @ \tilde C^T @ x0
-        if len(x0.shape) == 1: x0 = x0.reshape(-1, 1)
-        x = x0[self.pi]
-        res = D[:, np.newaxis] * x
+     
+        res = self.D[:, np.newaxis] * x
         for level in range(len(self.hpart["lk"])):
             lk = self.hpart["lk"][level]
             num_blocks = lk.size - 1 
             for block in range(num_blocks):
                 r1, r2 = lk[block], lk[block+1]
-                res[r1:r2] += B[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
-                                    (C[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
-        return res[self.pi_inv]
+                res[r1:r2] += self.F[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()] @ \
+                                    (self.F[r1:r2, self.ranks[:level].sum():self.ranks[:level+1].sum()].T @ x[r1:r2])
 
+        return res[self.pi_inv]
+    
 
     def F_matvec(self, z):
         # Compute F @ z, permuted
@@ -153,76 +144,80 @@ class MFModel:
     
     def matrix(self):
         # return \Sigma matrix
-        perm_hat_A = self._compute_perm_hat_A(self.F, self.D, self.hpart, self.ranks)
+        perm_hat_A = self._compute_perm_symm_hat_A(self.F, self.D, self.hpart, self.ranks)
         # pi_inv to permute \hat \Sigma_l from block diagonal in order approximating \Sigma
         hat_A = perm_hat_A[self.pi_inv, :][:, self.pi_inv]
         return hat_A
     
 
     def inv(self):
-        # return \Sigma matrix
-        perm_hat_A = self._compute_perm_hat_A(self.H, self.inv_D, self.hpart, self.ranks, sign=-1)
-        # pi_inv to permute \hat \Sigma_l from block diagonal in order approximating \Sigma
+        # return \Sigma^{-1} matrix
+        perm_hat_A = self._compute_perm_hat_A(self.inv_B, self.inv_C, self.inv_hpart, self.inv_ranks)
+        # pi_inv to permute \hat A_l from block diagonal in order approximating \Sigma^{-1}
         hat_A = perm_hat_A[self.pi_inv, :][:, self.pi_inv]
         return hat_A
+    
+
+    def _compute_perm_hat_A(self, B:np.ndarray, C:np.ndarray, hpart:mf.EntryHpartDict , ranks:np.ndarray):
+        """
+        Compute permuted hat_A with each Sigma_level being block diagonal matrix 
+        """
+        num_levels = ranks.size
+        perm_hat_A = np.zeros((B.shape[0], C.shape[0]))
+        for level in range(num_levels):
+            perm_hat_A += self._block_diag_BCt(level, hpart, B[:,ranks[:level].sum():ranks[:level+1].sum()],
+                                                             C[:,ranks[:level].sum():ranks[:level+1].sum()])
+        return perm_hat_A
+    
+
+    def _block_diag_BCt(self, level:int, hpart:mf.EntryHpartDict, B_level:np.ndarray, C_level:np.ndarray):
+        A_level = []
+        num_blocks = len(hpart['lk'][level])-1
+        for block in range(num_blocks):
+            r1, r2 = hpart['lk'][level][block], hpart['lk'][level][block+1]
+            A_level += [ B_level[r1:r2] @ C_level[r1:r2].T ]
+        return block_diag(*A_level)
     
 
     def shape(self):
         return (self.F.shape[0], self.F.shape[0])
 
 
-    def _compute_perm_hat_A(self, F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict , ranks:np.ndarray, sign=1):
+    def _compute_perm_symm_hat_A(self, F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict , ranks:np.ndarray):
         """
         Compute permuted hat_A with each Sigma_level being block diagonal matrix 
         """
         num_levels = ranks.size
         perm_hat_A = np.diag(D)
         for level in range(num_levels - 1):
-            perm_hat_A += self._block_diag_FFt(level, hpart, F[:,ranks[:level].sum():ranks[:level+1].sum()],
-                                               sign=sign)
+            perm_hat_A += self._block_diag_FFt(level, hpart, F[:,ranks[:level].sum():ranks[:level+1].sum()])
         return perm_hat_A
 
     
-    def _block_diag_FFt(self, level:int, hpart:mf.EntryHpartDict, F_level:np.ndarray, sign=1):
+    def _block_diag_FFt(self, level:int, hpart:mf.EntryHpartDict, F_level:np.ndarray):
         Sigma_level = []
         num_blocks = len(hpart['lk'][level])-1
         for block in range(num_blocks):
             r1, r2 = hpart['lk'][level][block], hpart['lk'][level][block+1]
-            Sigma_level += [ sign * F_level[r1:r2] @ F_level[r1:r2].T ]
+            Sigma_level += [ F_level[r1:r2] @ F_level[r1:r2].T ]
         return block_diag(*Sigma_level)
     
 
-    def old_solve_without_inv(self, v, eps=1e-9, max_iter=20, printing=False):
-        # Solve linear system \Sigma x = v without inverse coefficients
-        return iterative_refinement(self.ranks, v, self.F, self.D, self.hpart, 
-                                    eps=eps, max_iter=max_iter, printing=printing)
-    
-
-    def solve(self, v, eps=1e-9, max_iter=20, printing=False):
+    def solve(self, v, eps=1e-9, max_iter=2, printing=False):
         # Solve linear system \Sigma x = v
-        if self.H is None: 
-            self.inv_coefficients()
+        if self.inv_B is None: 
+            self.inv_coefficients(eps=eps, max_iter=max_iter, printing=printing)
 
+        x = mlr_matvec(v, self.inv_B, self.inv_C, self.inv_hpart, self.inv_ranks)
         v_norm = np.linalg.norm(v)
-        if len(v.shape) == 1: v = v.reshape(-1, 1)
-        residual = v_norm + 0
-        t = 0
-        x = np.zeros((v.size, 1))
-        Ax = x + 0
-        while residual / v_norm > eps and t < max_iter:
-            delta = self.matvec(v - Ax, sign=-1)
-            x += delta
-            Ax = self.matvec(x)
-            residual = np.linalg.norm(Ax - v)
-            t += 1
-            if printing:
-                print(residual/v_norm)
+        assert x.shape == v.shape
+        residual = np.linalg.norm(self.matvec(x) - v)
         if printing and residual / v_norm > eps:
             print(f"terminated with {residual/v_norm=}")
         return x
         
 
-    def inv_coefficients(self):
+    def inv_coefficients(self, refine=True, eps=1e-12, max_iter=1, printing=False, si_groups=None, row_selectors=None):
         prev_l_recurrence = (1/self.D[:, np.newaxis]) * self.F
         n = self.F.shape[0]
         H_Lm1 = np.zeros(self.F.shape)
@@ -278,5 +273,19 @@ class MFModel:
             # M5  
             prev_l_recurrence = prev_l_recurrence[:, :self.ranks[:level].sum()] - M4
             del M4
-        self.H = H_Lm1
-        self.inv_D = 1/self.D 
+
+        self.inv_B = np.concatenate([-H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
+        self.inv_C = np.concatenate([H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
+
+        if self.si_groups is None:
+            self.inv_hpart = {"pi":self.hpart["pi"], "pi_inv":self.hpart["pi_inv"],
+                                "lk":self.hpart["lk"] + [np.arange(n+1, dtype=int)]}
+            self.row_selectors, self.si_groups, _ = si_row_col(self.hpart)
+            self.inv_ranks = self.ranks
+
+        if refine:
+            # iterative refinement
+            self.inv_B, self.inv_C, self.inv_ranks = iterative_refinement(self.F, H_Lm1, self.D, self.hpart, self.inv_hpart, 
+                                                                          self.ranks, self.si_groups, self.row_selectors, 
+                                                                          eps=eps, max_iter=max_iter, printing=printing)
+            

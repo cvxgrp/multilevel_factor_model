@@ -97,7 +97,6 @@ def loglikelihood_value(Sigma, lu, piv, Y):
     # trace(Sigma^{-1}Y^T Y)
     tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
     obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * (logabsdet) - 0.5 * tr_Sigma_inv_YtY
-    # obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * fast_logdet(Sigma) - 0.5 * tr_Sigma_inv_YtY
     return obj / N
 
 
@@ -142,14 +141,10 @@ def em_algorithm(n, Y, part_sizes, F_hpart, row_selectors, si_groups, ranks, max
     loglikelihoods = [-np.inf]
     N = Y.shape[0]
     if F0 is None:
-        # F0 = np.random.randn(n, ranks[:-1].sum()) * 0.015
-        # _, C = low_rank_approx(Y, dim=ranks[0], symm=False)
-        # F0[:, :ranks[0]] = C / np.sqrt(N)
         _, C = low_rank_approx(Y, dim=ranks[:-1].sum(), symm=False)
         F0 = C / np.sqrt(N)
         D0 = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - np.diag(perm_tildeF_tildeFt(F0, F_hpart, ranks)), 1e-4)
-        # D0 = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - np.einsum('ij,ji->i', F0, F0.T), 1e-8)
-        # F0, D0 = np.random.randn(n, ranks[:-1].sum()), np.square(np.random.rand(n)) + 1e-6
+
     assert D0.shape == (n, ) and F0.shape == (n, ranks[:-1].sum())
     for t in range(max_iter):
             Sigma0 = perm_hat_Sigma(F0, D0, F_hpart, ranks)
