@@ -221,6 +221,12 @@ def jit_mult_blockdiag_refined_AtB(A, lk_A, B, lk_B):
 
 def iterative_refinement(F_Lm1, H_Lm1, D, F_hpart, hpart, ranks_F, si_groups, row_selectors,
                          eps=1e-10, max_iter=3, printing=False, debug=False):
+    """
+    Iterative refinement: 
+        solve \Sigma (\tilde \Sigma^{-1} + \Delta) = I
+        - using MLR products, \Delta is MLR
+        - concatenate factors at every iteration
+    """
     B_L = np.concatenate([-H_Lm1, 1/np.sqrt(D).reshape(-1, 1)], axis=1)
     C_L = np.concatenate([H_Lm1, 1/np.sqrt(D).reshape(-1, 1)], axis=1)
     F_L = np.concatenate([F_Lm1, np.sqrt(D).reshape(-1, 1)], axis=1)
@@ -242,7 +248,7 @@ def iterative_refinement(F_Lm1, H_Lm1, D, F_hpart, hpart, ranks_F, si_groups, ro
         # \Delta 
         B_Delta, C_Delta, ranks_Delta = mlr_mlr_matmul(B_L, C_L, ranks, B_SiSinv, C_SiSinv, ranks_SiSinv, hpart)
         del B_SiSinv, C_SiSinv, ranks_SiSinv
-        # \Delta + \tilde \Sigma
+        # \Delta + \tilde \Sigma^{-1}
         if ranks.sum() > F_Lm1.shape[0]: break
         B_L, C_L, ranks = mlr_mlr_sum(B_Delta, C_Delta, ranks_Delta, B_L, C_L, ranks, hpart)
 

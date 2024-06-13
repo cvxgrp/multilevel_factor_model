@@ -58,7 +58,7 @@ class MFModel:
             D = np.random.rand(n) + 1e-3
         elif init_type == 'Y':
             N = Y.shape[0] # Y is already permuted to put factors on blockdiagonal
-            _, C = low_rank_approx(Y, dim=ranks[:-1].sum(), symm=False)
+            _, C = low_rank_approx(Y, dim=r-1, symm=False)
             F = C / np.sqrt(N)
             D = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - self.diag_sparse_FFt(F, hpart, ranks), 1e-4)
         self.F, self.D = F, D
@@ -203,10 +203,10 @@ class MFModel:
         return block_diag(*Sigma_level)
     
 
-    def solve(self, v, eps=1e-9, max_iter=2, printing=False):
+    def solve(self, v, eps=1e-9, max_iter=2, printing=False, refine=False):
         # Solve linear system \Sigma x = v
         if self.inv_B is None: 
-            self.inv_coefficients(eps=eps, max_iter=max_iter, printing=printing)
+            self.inv_coefficients(eps=eps, refine=refine, max_iter=max_iter, printing=printing)
 
         x = mlr_matvec(v, self.inv_B, self.inv_C, self.inv_hpart, self.inv_ranks)
         v_norm = np.linalg.norm(v)
@@ -217,7 +217,7 @@ class MFModel:
         return x
         
 
-    def inv_coefficients(self, refine=True, eps=1e-12, max_iter=1, printing=False, si_groups=None, row_selectors=None):
+    def inv_coefficients(self, refine=False, eps=1e-12, max_iter=1, printing=False):
         prev_l_recurrence = (1/self.D[:, np.newaxis]) * self.F
         n = self.F.shape[0]
         H_Lm1 = np.zeros(self.F.shape)
@@ -225,6 +225,7 @@ class MFModel:
         for level in reversed(range(0, L-1)):
             pl = self.hpart['lk'][level].size - 1
             rl = self.ranks[level]
+            if rl == 0: continue
             # M0 same sparsity as Fl
             M0 = prev_l_recurrence[:, -self.ranks[level]:]
             # M1 = M0.T @ rec_term, same sparsity as rec_term
@@ -278,12 +279,13 @@ class MFModel:
         self.inv_C = np.concatenate([H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
 
         if self.si_groups is None:
-            self.inv_hpart = {"pi":self.hpart["pi"], "pi_inv":self.hpart["pi_inv"],
+            self.inv_hpart = {"pi":self.pi, "pi_inv":self.pi_inv,
                                 "lk":self.hpart["lk"] + [np.arange(n+1, dtype=int)]}
-            self.row_selectors, self.si_groups, _ = si_row_col(self.hpart)
             self.inv_ranks = self.ranks
 
         if refine:
+            if self.si_groups is None:
+                self.row_selectors, self.si_groups, _ = si_row_col(self.hpart)
             # iterative refinement
             self.inv_B, self.inv_C, self.inv_ranks = iterative_refinement(self.F, H_Lm1, self.D, self.hpart, self.inv_hpart, 
                                                                           self.ranks, self.si_groups, self.row_selectors, 

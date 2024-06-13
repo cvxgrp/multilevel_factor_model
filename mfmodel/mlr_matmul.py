@@ -126,8 +126,13 @@ def mlr_mlr_sum(B1, C1, ranks1, B2, C2, ranks2, hpart):
 
 
 def mlr_mlr_matmul(B1, C1, ranks1, B2, C2, ranks2, hpart):
+    """
+    Product of two MLR matrices with the same hpart
+    is an MLR with MLR-rank that is a sum of MLR-ranks of two matrices
+    """
     ranks = ranks1 + ranks2
-    ranks[-1] = ranks1[-1]
+    if B1.shape[0] == hpart["lk"][-1].size - 1:
+        ranks[-1] = ranks1[-1]
     L = ranks.size
     n = B1.shape[0]
     B, C = np.zeros((n, ranks.sum())), np.zeros((n, ranks.sum()))

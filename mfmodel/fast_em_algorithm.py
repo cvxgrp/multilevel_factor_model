@@ -18,7 +18,8 @@ def fit(Y, ranks, hpart, init_type="Y", max_iter=100, eps=1e-8, printing=False, 
     permuted_F_hpart = {"pi_inv":np.arange(n), "pi":np.arange(n), "lk":hpart["lk"]}
     row_selectors, si_groups, _ = si_row_col(hpart)
     F0, D0, loglikelihoods = fast_em_algorithm(Y,  F0, D0, permuted_F_hpart, row_selectors, si_groups, 
-                                               ranks, fitted_mfm.num_factors(), lls=True, max_iter=max_iter, eps=eps, printing=printing, freq=freq) 
+                                               ranks, lls=True, max_iter=max_iter, eps=eps, printing=printing, freq=freq) 
+    fitted_mfm.F, fitted_mfm.D = F0, D0
     return fitted_mfm, loglikelihoods
 
 
@@ -29,7 +30,7 @@ def fast_EM_intermediate_matrices(F_Lm1, D, F_hpart, Y, ranks, si, si_groups, ro
     assert tilde_F_ci.shape == (n, ranks[:-1].sum())
     Sigma0_inv_F_ci = np.zeros(tilde_F_ci.shape)
     true_mfm = MFModel(hpart=F_hpart, ranks=ranks, F=F_Lm1, D=D)
-    true_mfm.inv_coefficients(si_groups=si_groups, row_selectors=row_selectors, refine=refine) 
+    true_mfm.inv_coefficients(refine=refine) 
     Sigma0_inv_F_ci = true_mfm.solve(tilde_F_ci)
     F_ciT_Sigma0_inv_F_ci = tilde_F_ci.T @ Sigma0_inv_F_ci # (r-1) x (r-1)
     del tilde_F_ci
@@ -70,7 +71,7 @@ def fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups):
     return D1
 
 
-def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, num_factors, lls=False, max_iter=200, tol1=1e-5, tol2=1e-5,
+def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, lls=False, max_iter=200, tol1=1e-5, tol2=1e-5,
                         eps=1e-12, freq=50, printing=False):
         """
             Fast EM algorithm
@@ -80,18 +81,18 @@ def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, num_f
         obj = loglikelihoods[-1]
         N = Y.shape[0]
         for t in range(max_iter):
-                if lls:
-                    obj = fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)
-                    loglikelihoods += [obj]
-                if printing and t % freq == 0:
-                    print(f"{t=}, {obj=}")
-                F1 = fast_EM_get_F(F0, D0, Y, ranks, F_hpart, row_selectors, si_groups)
-                D1 = fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups)
-                F0, D0 = F1, D1
-                assert D1.min() >= -1e-8 and loglikelihoods[-2] - 1e-8 <= loglikelihoods[-1]
-                if loglikelihoods[-1] - loglikelihoods[-2] < eps * abs(loglikelihoods[-2]):
-                    print(f"terminating at {t=}")
-                    break
+            if lls:
+                obj = fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, tol1=tol1, tol2=tol2)
+                loglikelihoods += [obj]
+            if printing and t % freq == 0:
+                print(f"{t=}, {obj=}")
+            F1 = fast_EM_get_F(F0, D0, Y, ranks, F_hpart, row_selectors, si_groups)
+            D1 = fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups)
+            F0, D0 = F1, D1
+            assert D1.min() >= -1e-8 and loglikelihoods[-2] - 1e-8 <= loglikelihoods[-1]
+            if loglikelihoods[-1] - loglikelihoods[-2] < eps * abs(loglikelihoods[-2]):
+                print(f"terminating at {t=}")
+                break
         if printing: print(f"{t=}, {obj=}")
         return F0, D0, loglikelihoods
         
@@ -112,21 +113,70 @@ def perm_hat_Sigma(F:np.ndarray, D:np.ndarray, hpart:mf.EntryHpartDict, ranks:np
         return perm_hat_Sigma
 
 
-def fast_exp_true_loglikelihood_value(true_F, true_D, F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8):
+def full_mlr_frob_norm(B_L, C_L, ranks, hpart, si_groups_L):
+    """
+    Return \|B C^T \|_F
+    """
+    res = 0
+    n = B_L.shape[0]
+    for si in range(n):
+        r1, r2 = si, si+1 # contiguous range for group si
+        tilde_B_ci = get_sparse_F_si_col_sparsity(B_L, ranks, hpart, si_groups_L[si]) # n x (r-1)
+        assert tilde_B_ci.shape == (n, ranks.sum()), print(tilde_B_ci.shape, (n, ranks.sum()))
+        ci_Bt_B_ci = tilde_B_ci.T @ tilde_B_ci
+        del tilde_B_ci
+        ri_C_ci = get_sparse_F_si_col_sparsity(C_L, ranks, hpart, si_groups_L[si])[r1:r2] # (r2-r1) x (r-1)
+        res += np.einsum('ik,ik->i', (ri_C_ci @ ci_Bt_B_ci), ri_C_ci).sum()
+        del ri_C_ci
+    return np.sqrt(max(0, res))
+
+
+def full_mlr_trace(B_L, C_L, ranks, hpart, row_selectors, si_groups):
+    """
+    Return trace(B C^T)
+    """
+    num_sparsities = row_selectors.size - 1
+    res = (B_L[:,-1] * C_L[:, -1]).sum()
+    for si in range(num_sparsities):
+        r1, r2 = row_selectors[si: si+2] # contiguous range for group si
+        ri_C_ci = get_sparse_F_si_col_sparsity(C_L, ranks, hpart, si_groups[si])[r1:r2] # (r2-r1) x (r-1)
+        ri_B_ci = get_sparse_F_si_col_sparsity(B_L, ranks, hpart, si_groups[si])[r1:r2] # (r2-r1) x (r-1)
+        res += np.einsum('ik,ik->i', ri_B_ci, ri_C_ci).sum()
+        del ri_B_ci, ri_C_ci
+    return res
+
+
+def fast_exp_loglikelihood_value(B_true, fitted_mfm, ranks, hpart, F_hpart, 
+                                 row_selectors, si_groups, tol1=1e-5, tol2=1e-5):
     """
         Expected log-likelihood under the true model
     """
-    n = F0.shape[0]
-    logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)    
-    tr_fitted_Sigma_true_Sigma = n #todo
-    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * logdet - (1/2) * tr_fitted_Sigma_true_Sigma
+    n = B_true.shape[0]
+    logdet = fast_logdet_FFtpD(fitted_mfm.F, fitted_mfm.D, fitted_mfm.ranks, F_hpart, tol1=tol1, tol2=tol2)  
+    # \tilde \Sigma^{-1} \Sigma
+    B_prod, C_prod, ranks_prod = mlr_mlr_matmul(fitted_mfm.inv_B, fitted_mfm.inv_C, fitted_mfm.inv_ranks, 
+                                                B_true, B_true, ranks, fitted_mfm.inv_hpart) 
+    tr_fitted_Sigma_inv_true_Sigma = full_mlr_trace(B_prod, C_prod, ranks_prod, hpart, 
+                                                    row_selectors, si_groups)
+    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * logdet - (1/2) * tr_fitted_Sigma_inv_true_Sigma 
     return obj
 
 
-def fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8):
+def fast_exp_true_loglikelihood_value(F_true, D_true, ranks, F_hpart, tol1=1e-5, tol2=1e-5):
+    """
+        True expected log-likelihood 
+    """
+    n = F_true.shape[0]
+    logdet = fast_logdet_FFtpD(F_true, D_true, ranks, F_hpart, tol1=tol1, tol2=tol2)  
+    obj = - (n/2) * np.log(2 * np.pi) - (1/2) * logdet - (1/2) * n
+    return obj
+
+
+def fast_logdet_FFtpD(F0, D0, ranks, F_hpart, tol1=1e-8, tol2=1e-8):
     rescaled_sparse_F = mf.convert_compressed_to_sparse(np.power(D0, -0.5)[:, np.newaxis] * F0, 
                                              F_hpart, 
                                              ranks[:-1])
+    num_factors = rescaled_sparse_F.shape[1]
     try:
         sigmas = scipy.sparse.linalg.svds( rescaled_sparse_F, k=num_factors//2, return_singular_vectors=False, which='LM', tol=tol1)
     except:
@@ -142,12 +192,12 @@ def fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=1e-8, tol2=1e-8)
     return logdet
 
 
-def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, tol2=1e-7, refine=False):
+def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, tol1=1e-7, tol2=1e-7, refine=False):
     """
         Average log-likelihood of observed data
     """
     N, n = Y.shape
-    logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, num_factors, tol1=tol1, tol2=tol2)  
+    logdet = fast_logdet_FFtpD(F0, D0, ranks, F_hpart, tol1=tol1, tol2=tol2)  
 
     Sigma_inv_Yt = np.zeros(Y.T.shape)
 
@@ -158,3 +208,13 @@ def fast_loglikelihood_value(F0, D0, Y, ranks, F_hpart, num_factors, tol1=1e-7, 
     tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
     obj = - (N*n/2) * np.log(2 * np.pi) - (N/2) * (logdet) - 0.5 * tr_Sigma_inv_YtY 
     return obj / N
+
+
+def fast_frob_fit_loglikehood(undermuted_A, Y, F_hpart, hpart, ranks, printing=True, eps_ff=1e-3):
+    hat_A = mf.MLRMatrix()
+    hat_A.hpart = hpart
+    losses = hat_A.factor_fit(undermuted_A, ranks, hat_A.hpart, eps_ff=eps_ff, PSD=True, freq=1, \
+                                    printing=printing, max_iters_ff=50, symm=True)
+    F_frob, D_frob = hat_A.B[:, :-1], np.square(hat_A.B[:, -1])
+    frob_mfm = MFModel(hpart=F_hpart, ranks=ranks, F=F_frob, D=D_frob)
+    return frob_mfm, losses

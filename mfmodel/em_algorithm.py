@@ -65,7 +65,7 @@ def EM_intermediate_matrices(tilde_F, Y, lu, piv, ranks, si, part_sizes, si_grou
 
 def exp_true_loglikelihood_value(Sigma):
     """
-        Expected log-likelihood under the true model
+        True expected log-likelihood 
     """
     n = Sigma.shape[0]
     (sign, logabsdet) = np.linalg.slogdet(Sigma)
