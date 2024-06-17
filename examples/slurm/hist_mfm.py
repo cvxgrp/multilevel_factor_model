@@ -21,20 +21,19 @@ parser = argparse.ArgumentParser(description='Solve a problem based on rank and 
 parser.add_argument('--slurm', type=int, default=0)
 args = parser.parse_args()
 
-n = 5000
-
-
-mtype = "large_smfm_n%d"%n
+n = 10000
 
 np.random.seed(1001 + args.slurm)
 random.seed(1001 + args.slurm)
 
 signal_to_noise = 4
 
-filename = "%s_n%d_sl%d"%(mtype, n, args.slurm)
-L = 5
+L = 6
 
-ranks = np.array([10, 4, 3, 2, 1])
+mtype = "large_smfm_n%d_L%d"%(n, L)
+filename = "%s_n%d_sl%d"%(mtype, n, args.slurm)
+
+ranks = np.array([10, 5, 4, 3, 2, 1])
 rank = ranks.sum()
 nsamples = 4 * rank
 nsamples
@@ -43,7 +42,7 @@ nsamples
 
 pi_rows = np.random.permutation(n)
 hpart = {'rows':{'pi':pi_rows, 'lk':[]}, 'cols':{'pi':pi_rows, 'lk':[]}} 
-for ngroups in [2, 5, 9, 17, n+1]:
+for ngroups in [2, 5, 9, 17, 33, n+1]:
        hpart['rows']['lk'] += [ np.linspace(0, n, ngroups, endpoint=True, dtype=int)]
 hpart['cols']['lk'] = hpart['rows']['lk']
 part_sizes = mfm.print_hpart_numgroups(hpart)

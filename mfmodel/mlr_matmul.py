@@ -30,11 +30,13 @@ def mlr_matvec(x0, B, C, hpart, ranks):
 
 
 def mult_blockdiag_refined_CtB(C, lk_C, B, lk_B):
-    # multiply blockdiagonal matrix by blockdiagonal matrix
-    # blockdiagonal(Ct) @ blockdiagonal(B)
-    # Ct's column sparity is refined by B's row sparsity
-    # C, B given in compressed format
-    # return ( r_C x num_blocks_B * r_B)
+    """
+    multiply blockdiagonal matrix by blockdiagonal matrix
+    blockdiagonal(Ct) @ blockdiagonal(B)
+    Ct's column sparity is refined by B's row sparsity
+    C, B given in compressed format
+    return ( r_C x num_blocks_B * r_B)
+    """
     assert lk_C.size <= lk_B.size and lk_B[-1] in B.shape and lk_C[-1] in C.shape
     num_blocks_B = lk_B.size - 1
     res = np.zeros((C.shape[1], B.shape[1] * (lk_B.size - 1)))
@@ -46,10 +48,12 @@ def mult_blockdiag_refined_CtB(C, lk_C, B, lk_B):
 
 
 def mult_blockdiag_refined_BCt(B, lk_B, C, lk_C):
-    # multiply blockdiagonal matrix by blockdiagonal matrix
-    # blockdiagonal(B) @ blockdiagonal(Ct)
-    # B's column sparity is refined by Ct's row sparsity
-    # B, C given in compressed format
+    """
+    multiply blockdiagonal matrix by blockdiagonal matrix
+    blockdiagonal(B) @ blockdiagonal(Ct)
+    B's column sparity is refined by Ct's row sparsity
+    B, C given in compressed format
+    """
     assert lk_B.size <= lk_C.size and lk_B[-1] in B.shape and lk_C[-1] in C.shape, \
         print(lk_B.size, lk_C.size, lk_B[-1], B.shape, lk_C[-1], C.shape)
     num_blocks_C = lk_C.size - 1

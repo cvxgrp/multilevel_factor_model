@@ -23,8 +23,8 @@ setup(
     ],
 )
  
-# conda create -n hlr python=3.9
-# conda activate hlr
+# conda create -n mfm python=3.9
+# conda activate mfm
 # conda install numpy scipy matplotlib seaborn pandas numba networkx dask
 # pip install torch==2.0.0 ipython
 # python setup.py install

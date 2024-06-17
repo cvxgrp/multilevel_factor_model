@@ -13,11 +13,13 @@ from mfmodel.mlr_matmul import *
 
 
 def mult_blockdiag_refined_AB(A, lk_A, B, lk_B):
-    # multiply blockdiagonal matrix by blockdiagonal matrix
-    # blockdiagonal(A) @ blockdiagonal(B)
-    # A has column sparity that is a refinement of B row sparsity
-    # A, B given in compressed format
-    # return (m_A x r_B)
+    """
+    multiply blockdiagonal matrix by blockdiagonal matrix
+    blockdiagonal(A) @ blockdiagonal(B)
+    A has column sparity that is a refinement of B row sparsity
+    A, B given in compressed format
+    return (m_A x r_B)
+    """
     assert lk_A.size >= lk_B.size and lk_B[-1] == B.shape[0] and lk_A[-1] in A.shape
     num_blocks_A = lk_A.size - 1
     res = np.zeros((A.shape[0], B.shape[1]))
@@ -29,11 +31,13 @@ def mult_blockdiag_refined_AB(A, lk_A, B, lk_B):
 
 
 def mult_blockdiag_refined_AtB(A, lk_A, B, lk_B):
-    # multiply blockdiagonal matrix by blockdiagonal matrix
-    # blockdiagonal(At) @ blockdiagonal(B)
-    # At has column sparity that is a refinement of B row sparsity
-    # A, B given in compressed format
-    # return (num_blocks * r_A x r_B)
+    """
+    multiply blockdiagonal matrix by blockdiagonal matrix
+    blockdiagonal(At) @ blockdiagonal(B)
+    At has column sparity that is a refinement of B row sparsity
+    A, B given in compressed format
+    return (num_blocks * r_A x r_B)
+    """
     assert lk_A.size >= lk_B.size and lk_B[-1] == B.shape[0] and lk_A[-1] in A.shape
     num_blocks_A = lk_A.size - 1
     res = np.zeros((A.shape[1] * (lk_A.size - 1), B.shape[1]))
@@ -206,10 +210,12 @@ def block_diag_lk(lk:np.array, A:np.ndarray):
 
 @nb.njit(parallel=True)
 def jit_mult_blockdiag_refined_AtB(A, lk_A, B, lk_B):
-    # multiply blockdiagonal matrix by blockdiagonal matrix
-    # blockdiagonal(At) @ blockdiagonal(B)
-    # At has column sparity that is a refinement of B row sparsity
-    # A, B given in compressed format
+    """
+    multiply blockdiagonal matrix by blockdiagonal matrix
+    blockdiagonal(At) @ blockdiagonal(B)
+    At has column sparity that is a refinement of B row sparsity
+    A, B given in compressed format
+    """
     num_blocks_A = lk_A.size - 1
     res = np.zeros((A.shape[1] * (lk_A.size - 1), B.shape[1]))
     # decide whether make A block diagonal by splitting rows or columns
