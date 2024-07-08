@@ -12,6 +12,28 @@ from mfmodel.mlr_matmul import *
 
 
 
+
+
+def mult_blockdiag_refined_CtB_vh(C, lk_C, B, lk_B):
+    """
+    multiply blockdiagonal matrix by blockdiagonal matrix
+    blockdiagonal(Ct) @ blockdiagonal(B)
+    Ct's column sparity is refined by B's row sparsity
+    C, B given in compressed format
+    C: vertical  (... x r_C)
+    B: horizontal (r_B x ...)
+    return ( r_C x num_blocks_B * r_B)
+    """
+    assert lk_C.size <= lk_B.size and lk_B[-1] in B.shape and lk_C[-1] in C.shape
+    num_blocks_B = lk_B.size - 1
+    res = np.zeros((C.shape[1], B.shape[1]))
+    # make C block diagonal by splitting rows
+    for block_B in range(num_blocks_B):
+        r1, r2 = lk_B[block_B], lk_B[block_B+1] 
+        res[:, r1: r2] = C[block_B * B.shape[0] : (block_B+1) * B.shape[0]].T @ B[:, r1:r2]
+    return res
+
+
 def mult_blockdiag_refined_AB(A, lk_A, B, lk_B):
     """
     multiply blockdiagonal matrix by blockdiagonal matrix
@@ -188,6 +210,16 @@ def inv_rec_term_to_sparse(compressed_rec, lks, ranks):
     return np.concatenate(res, axis=1)
 
 
+def inv_rec_term_to_sparse_H(compressed_rec, lks, ranks):
+    # convert compressed form of recurrence term in the SMW inverse computation to sparse
+    res = []
+    cumsum = 0
+    for lk, rank in zip(lks, ranks):
+        res += [block_diag_lk(lk, compressed_rec[:, cumsum : cumsum+rank ])]
+        cumsum += rank 
+    return np.concatenate(res, axis=1)
+
+
 def block_diag_AB(lk:np.array, A:np.ndarray, B:np.ndarray):
     # return blockdiagonal(A) @ blockdiagonal(B)
     res = []
@@ -198,13 +230,16 @@ def block_diag_AB(lk:np.array, A:np.ndarray, B:np.ndarray):
     return block_diag(*res)
 
 
-def block_diag_lk(lk:np.array, A:np.ndarray):
+def block_diag_lk(lk:np.array, A:np.ndarray, col=False):
     # return blockdiagonal(A)
     res = []
     num_blocks = lk.size - 1 
     for block in range(num_blocks):
         r1, r2 = lk[block], lk[block+1]
-        res += [A[r1:r2]]
+        if col:
+            res += [A[:, r1:r2]]
+        else:
+            res += [A[r1:r2]]
     return block_diag(*res)
 
 

@@ -65,7 +65,7 @@ b = fitted_mfm.matvec(x)
 ```python3
 x = fitted_mfm.solve(v)
 ``` 
-3. Diagonal of $\Sigma^{-1}$
+3. Diagonal of $\hat \Sigma^{-1}$
 ```python3
 d = fitted_mfm.diag_inv()
 ```
