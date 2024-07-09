@@ -243,6 +243,42 @@ def block_diag_lk(lk:np.array, A:np.ndarray, col=False):
     return block_diag(*res)
 
 
+def sparse_chol_row_block(row_block, hpart, level, L, s_all, ranks, l_prime=None):
+    # Cholesky: compressed to sparse row block
+    res = []
+    if l_prime is None: l_prime = level
+    for tilde_l in reversed(range(level, L)):
+        lk_level_tilde_l = np.searchsorted(hpart["rows"]['lk'][tilde_l], hpart["rows"]['lk'][l_prime], side='left') * ranks[tilde_l]
+        res += [block_diag_lk(lk_level_tilde_l, 
+                                  row_block[:, s_all[:L-1-tilde_l].sum():s_all[:L-1-tilde_l+1].sum()], 
+                                  col=True)]
+    # sparse: p_l' r_l' x (n + p_{L-1} r_{L-1} + ... + p_l r_l)
+    return np.concatenate(res, axis=1)
+
+
+def sparse_chol_rec_term(rec_term, level, s_all, hpart, ranks):
+    # Cholesky recurrent term
+    # compressed: (r_1 + ... + r_{l-1}) x (n + p_{L-1} r_{L-1} + ... + p_l r_l)
+    L = ranks.size
+    sparse_rec_term = np.zeros((s_all[L-1-level+1:].sum(), s_all[:L-1-level+1].sum()))
+    for l_prime in range(level):
+        sparse_rec_term[s_all[L-1-l_prime+1:].sum():s_all[L-1-l_prime:].sum(), 
+                        :] = sparse_chol_row_block(rec_term[ranks[:l_prime].sum() : ranks[:l_prime+1].sum()], 
+                                                    hpart, level, L, s_all, ranks, l_prime) 
+    # sparse: (p_1 r_1 + ... + p_{l-1} r_{l-1}) x (n + p_{L-1} r_{L-1} + ... + p_l r_l)
+    return sparse_rec_term  
+
+
+def sparse_chol_factor(Chol_L, s_lps, s_all, hpart, L, n, ranks):
+    # Cholesky factor: compressed to sparse
+    sparse_Chol_L = np.zeros((n + s_lps[-1], n + s_lps[-1]))
+    for level in reversed(range(L)):
+        sparse_Chol_L[s_all[:L-1-level].sum():s_all[:L-1-level+1].sum(), 
+                      :s_all[:L-1-level+1].sum()] = sparse_chol_row_block(Chol_L[L-1-level], 
+                                                                            hpart, level, L, s_all, ranks)
+    return sparse_Chol_L
+
+
 @nb.njit(parallel=True)
 def jit_mult_blockdiag_refined_AtB(A, lk_A, B, lk_B):
     """

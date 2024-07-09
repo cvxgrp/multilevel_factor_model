@@ -217,11 +217,22 @@ class MFModel:
         return x
         
 
-    def inv_coefficients(self, refine=False, eps=1e-12, max_iter=1, printing=False):
+    def inv_coefficients(self, refine=False, eps=1e-12, max_iter=1, printing=False, cholesky=False, det=False):
         prev_l_recurrence = (1/self.D[:, np.newaxis]) * self.F
         n = self.F.shape[0]
         H_Lm1 = np.zeros(self.F.shape)
         L = len(self.hpart['lk']) + 1
+        determinant = np.prod(self.D)
+
+        if cholesky:
+            # cumulative sums: [p_{L-1} r_{L-1}, ... , p_{L-1} r_{L-1} + ... + p_1 r_1]
+            s_lps = np.cumsum(np.array([self.ranks[lp]*(self.hpart['lk'][lp].size - 1) for lp in reversed(range(0, L-1))]))
+            # for level L size: (r_1 + ... + r_{L-1}) x n
+            prev_DL_recurrence = prev_l_recurrence.T + 0
+            Chol_L = [np.ones((1, n))] + [None] * (L-1)
+            # [np.zeros(ranks[lp], n + s_lps[lp]) for lp in reversed(range(0, L-1))]
+            Chol_D = np.zeros(n + s_lps[L-2])
+            Chol_D[:n] = self.D
         for level in reversed(range(0, L-1)):
             pl = self.hpart['lk'][level].size - 1
             rl = self.ranks[level]
@@ -249,6 +260,29 @@ class MFModel:
                 sqrt_M2[k*rl : (k+1)*rl] = ((1 / np.sqrt(eigvals)) * eigvecs) @ eigvecs.T
                 M2[k*rl : (k+1)*rl] = ((1/eigvals) * eigvecs) @ eigvecs.T
                 del eigvals, eigvecs
+
+            if cholesky or det:
+                # Cholesky decomposition of M2^{-1}
+                if not cholesky:
+                    Chol_Vl = np.zeros((pl*rl))
+                    for k in range(pl):
+                        Rl = np.linalg.cholesky(FlTM0[k*rl : (k+1)*rl])
+                        Chol_Vl[k*rl : (k+1)*rl] = np.square(np.diag(Rl))
+                else:
+                    Chol_Rl = np.zeros((rl, pl*rl))
+                    Chol_Vl = np.zeros((pl*rl))
+                    for k in range(pl):
+                        Chol_Rl[:, k*rl : (k+1)*rl] = np.linalg.cholesky(FlTM0[k*rl : (k+1)*rl])
+                        Chol_Vl[k*rl : (k+1)*rl] = np.square(np.diag(Chol_Rl[:, k*rl : (k+1)*rl]))
+                        Chol_Rl[:, k*rl : (k+1)*rl] *= Chol_Vl[k*rl : (k+1)*rl]**(-1/2)
+                determinant *= np.prod(Chol_Vl)
+
+            if cholesky:
+                # Cholesky new factors L^{(l)}, D^{(l)}
+                Chol_L[L-1-level] = np.concatenate([prev_DL_recurrence[self.ranks[:level].sum():self.ranks[:level+1].sum(), :], Chol_Rl], axis=1)
+                Chol_D[n + s_lps[L-2-level] - self.ranks[level]*(self.hpart['lk'][level].size - 1) : n + s_lps[L-2-level]] = -Chol_Vl 
+                del Chol_Vl
+
             del FlTM0
             H_Lm1[:, self.ranks[:level].sum():self.ranks[:level+1].sum()] = mult_blockdiag_refined_AB(M0, 
                                                                                             self.hpart['lk'][level],
@@ -263,6 +297,21 @@ class MFModel:
                                                                                             M1[:, self.ranks[:lp].sum():self.ranks[:lp+1].sum()], 
                                                                                             M1_lks[lp])
             del M1, M2
+            if cholesky and level >= 1:
+                # (r_1 + ... + r_{l-1}) x (p_l r_l)
+                M3TRl = np.zeros((self.ranks[:level].sum(), rl * pl))
+                indices = np.linspace(0, pl*rl, num=pl+1, endpoint=True, dtype=int)
+                for l_prime in range(level):
+                    rank1, rank2 = self.ranks[:l_prime].sum(), self.ranks[:l_prime+1].sum()
+                    M3TRl[rank1 : rank2] = mult_blockdiag_refined_CtB_vh(M3[:, rank1 : rank2], 
+                                                        M1_lks[l_prime],
+                                                        Chol_Rl, 
+                                                        indices)
+                # Cholesky recurrent term
+                # (r_1 + ... + r_{l-1}) x (n + p_{L-1} r_{L-1} + ... + p_l r_l)
+                prev_DL_recurrence = np.concatenate([prev_DL_recurrence[:self.ranks[:level].sum(), :], M3TRl], axis=1)
+                del Chol_Rl, M3TRl
+
             # M4 = M0 @ M3, same sparsity as current rec_term
             M4 = np.zeros((n, self.ranks[:level].sum()))
             for lp in range(level):
@@ -275,6 +324,11 @@ class MFModel:
             prev_l_recurrence = prev_l_recurrence[:, :self.ranks[:level].sum()] - M4
             del M4
 
+        if cholesky:
+            self.Chol_L = Chol_L
+            self.Chol_D = Chol_D
+        if det or cholesky:
+            self.determinant = np.abs(determinant)
         self.inv_B = np.concatenate([-H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
         self.inv_C = np.concatenate([H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
 
