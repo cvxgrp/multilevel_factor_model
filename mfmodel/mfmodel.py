@@ -223,6 +223,7 @@ class MFModel:
         H_Lm1 = np.zeros(self.F.shape)
         L = len(self.hpart['lk']) + 1
         determinant = np.prod(self.D)
+        logdet = np.log(self.D + 1e-8).sum()
 
         if cholesky:
             # cumulative sums: [p_{L-1} r_{L-1}, ... , p_{L-1} r_{L-1} + ... + p_1 r_1]
@@ -276,6 +277,7 @@ class MFModel:
                         Chol_Vl[k*rl : (k+1)*rl] = np.square(np.diag(Chol_Rl[:, k*rl : (k+1)*rl]))
                         Chol_Rl[:, k*rl : (k+1)*rl] *= Chol_Vl[k*rl : (k+1)*rl]**(-1/2)
                 determinant *= np.prod(Chol_Vl)
+                logdet += np.log(Chol_Vl + 1e-8).sum()
 
             if cholesky:
                 # Cholesky new factors L^{(l)}, D^{(l)}
@@ -329,6 +331,7 @@ class MFModel:
             self.Chol_D = Chol_D
         if det or cholesky:
             self.determinant = np.abs(determinant)
+            self.logdet = logdet
         self.inv_B = np.concatenate([-H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
         self.inv_C = np.concatenate([H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
 
