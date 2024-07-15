@@ -1,5 +1,5 @@
 from scipy.linalg import block_diag
-import scipy
+import scipy.sparse
 import mlrfit as mf
 import numpy as np
 
@@ -75,11 +75,16 @@ def fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups, mfm_S
     if mfm_Sigma is None:
         mfm_Sigma = MFModel(hpart=F_hpart, ranks=ranks, F=F0, D=D0)
         mfm_Sigma.inv_coefficients() 
+    sparse = scipy.sparse.isspmatrix(Y)
     for si in range(num_sparsities):
         tilde_F_ci = get_sparse_F_si_col_sparsity(F0, ranks, F_hpart, si_groups[si]) # n x (r-1)
         ri_Vt_ci_t, ci_W_ci, r1, r2 = fast_EM_intermediate_matrices_base(mfm_Sigma, tilde_F_ci, Y, ranks, si, row_selectors)
         ri_F1_ciT = F1[r1:r2]
-        D1[r1:r2] = (1/N) * ( np.einsum('ij,ji->i', Y[:, r1:r2].T, Y[:, r1:r2]) \
+        if sparse:
+            ri_YtY_ri = scipy.sparse.csr_array.sum(scipy.sparse.csr_array.multiply(Y[:, r1:r2], Y[:, r1:r2]), axis=0)
+        else:
+            ri_YtY_ri = np.einsum('ij,ji->i', Y[:, r1:r2].T, Y[:, r1:r2])
+        D1[r1:r2] = (1/N) * ( ri_YtY_ri \
                             - 2 * np.einsum('ij,ji->i', ri_F1_ciT, ri_Vt_ci_t) \
                             + np.einsum('ij,jk,ki->i', ri_F1_ciT, ci_W_ci, ri_F1_ciT.T))
     if return_mfm:
@@ -197,11 +202,13 @@ def fast_loglikelihood_value(mfm_Sigma0, Y):
         Average log-likelihood of observed data
     """
     N, n = Y.shape
-    Sigma_inv_Yt = np.zeros(Y.T.shape)
+    Sigma_inv_Yt = np.zeros((n, N))
     logdet = mfm_Sigma0.logdet
     Sigma_inv_Yt = mfm_Sigma0.solve(Y.T)
-
-    tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
+    if scipy.sparse.isspmatrix(Y):
+        tr_Sigma_inv_YtY = scipy.sparse.csr_array.sum(Y.multiply(Sigma_inv_Yt))
+    else:
+        tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
     obj = - (n/2) * np.log(2 * np.pi) - (1/2) * (logdet) - (0.5 / N) * tr_Sigma_inv_YtY
     return obj
     

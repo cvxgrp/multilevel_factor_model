@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import block_diag
-
+import scipy.sparse
 
 
 
@@ -11,10 +11,14 @@ def mlr_matvec(x0, B, C, hpart, ranks):
     # \tilde B @ \tilde C^T @ x0
     if len(x0.shape) == 1: x0 = x0.reshape(-1, 1)
     x = x0[hpart["pi"]]
+    sparse = scipy.sparse.isspmatrix(x0)
     if B.shape[0] == hpart["lk"][-1].size - 1:
         d = np.multiply(B[:, -ranks[-1]:], C[:, -ranks[-1]:]).sum(axis=1)
         L = len(hpart["lk"]) - 1
-        res = d[:, np.newaxis] * x
+        if sparse:
+            res = x.multiply(d[:, np.newaxis])
+        else:
+            res = d[:, np.newaxis] * x
     else:
         res = np.zeros(x.shape)
         L = len(hpart["lk"])

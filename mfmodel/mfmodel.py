@@ -3,6 +3,7 @@ from typing import List, Tuple, Callable, TypedDict, List, Set, Optional
 
 import numpy as np
 from scipy.linalg import block_diag
+import scipy.sparse
 
 import mlrfit as mf
 
@@ -10,8 +11,6 @@ import mlrfit as mf
 from mfmodel.utils import *
 from mfmodel.inverse import *
 from mfmodel.mlr_matmul import *
-# from mfmodel.fast_em_algorithm import *
-
 
 
 
@@ -60,7 +59,11 @@ class MFModel:
             N = Y.shape[0] # Y is already permuted to put factors on blockdiagonal
             _, C = low_rank_approx(Y, dim=r-1, symm=False)
             F = C / np.sqrt(N)
-            D = np.maximum(np.einsum('ij,ji->i', Y.T, Y) / N - self.diag_sparse_FFt(F, hpart, ranks), 1e-4)
+            if scipy.sparse.isspmatrix(Y):
+                YtY = scipy.sparse.csr_array.sum(scipy.sparse.csr_array.multiply(Y, Y), axis=0)
+            else:
+                YtY = np.einsum('ij,ji->i', Y.T, Y)
+            D = np.maximum(YtY / N - self.diag_sparse_FFt(F, hpart, ranks), 1e-4)
         self.F, self.D = F, D
         return F, D
     
