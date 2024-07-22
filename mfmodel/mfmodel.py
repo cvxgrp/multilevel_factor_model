@@ -210,13 +210,7 @@ class MFModel:
         # Solve linear system \Sigma x = v
         if self.inv_B is None: 
             self.inv_coefficients(eps=eps, refine=refine, max_iter=max_iter, printing=printing)
-
         x = mlr_matvec(v, self.inv_B, self.inv_C, self.inv_hpart, self.inv_ranks)
-        v_norm = np.linalg.norm(v)
-        assert x.shape == v.shape
-        residual = np.linalg.norm(self.matvec(x) - v)
-        if printing and residual / v_norm > eps:
-            print(f"terminated with {residual/v_norm=}")
         return x
         
 

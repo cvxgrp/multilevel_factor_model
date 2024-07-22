@@ -16,13 +16,13 @@ def mlr_matvec(x0, B, C, hpart, ranks):
         d = np.multiply(B[:, -ranks[-1]:], C[:, -ranks[-1]:]).sum(axis=1)
         L = len(hpart["lk"]) - 1
         if sparse:
-            res = x.multiply(d[:, np.newaxis])
+            res = x.multiply(d[:, np.newaxis]).tocsr()
         else:
             res = d[:, np.newaxis] * x
     else:
         res = np.zeros(x.shape)
         L = len(hpart["lk"])
- 
+
     for level in range(L):
         lk = hpart["lk"][level]
         num_blocks = lk.size - 1 

@@ -204,10 +204,12 @@ def fast_loglikelihood_value(mfm_Sigma0, Y):
     N, n = Y.shape
     Sigma_inv_Yt = np.zeros((n, N))
     logdet = mfm_Sigma0.logdet
-    Sigma_inv_Yt = mfm_Sigma0.solve(Y.T)
     if scipy.sparse.isspmatrix(Y):
-        tr_Sigma_inv_YtY = scipy.sparse.csr_array.sum(Y.multiply(Sigma_inv_Yt))
+        Sigma_inv_Yt = mfm_Sigma0.solve(Y.transpose().tocsr())
+        print(Sigma_inv_Yt.shape, Y.shape)
+        tr_Sigma_inv_YtY = scipy.sparse.coo_array.sum(Sigma_inv_Yt.multiply(Y))
     else:
+        Sigma_inv_Yt = mfm_Sigma0.solve(Y.T)
         tr_Sigma_inv_YtY = np.einsum('ij,ji->i', Y, Sigma_inv_Yt).sum()
     obj = - (n/2) * np.log(2 * np.pi) - (1/2) * (logdet) - (0.5 / N) * tr_Sigma_inv_YtY
     return obj
