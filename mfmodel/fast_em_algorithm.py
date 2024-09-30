@@ -11,6 +11,7 @@ from mfmodel.mfmodel import *
 
 
 def fit(Y, ranks, hpart, init_type="Y", max_iter=100, eps=1e-8, printing=False, freq=10):
+    # Y: N x n has already permuted columns, ie, features ordered wrt F_hpart
     fitted_mfm = MFModel(hpart=hpart, ranks=ranks)
     fitted_mfm.init_FD(ranks, hpart, init_type=init_type, Y=Y)
     F0, D0 = fitted_mfm.F, fitted_mfm.D

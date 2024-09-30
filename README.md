@@ -1,17 +1,18 @@
 
 
-# Multilevel Factor Models
+# Fitting Multilevel Factor Models
 
 joint work with T. Hastie and S. Boyd.
-<!-- This repository accompanies the [manuscript](XXX). -->
+This repository accompanies the [manuscript](https://arxiv.org/abs/2409.12067).
 
-We examine a special case of the multilevel factor model (MFM), 
-with covariance given by multilevel low rank (MLR) matrix. 
+We examine a special case of the multilevel factor model, 
+with covariance given by 
+[multilevel low rank (MLR) matrix](https://arxiv.org/abs/2310.19214). 
 We develop a novel, fast implementation of the expectation-maximization
 (EM) algorithm, tailored for multilevel factor models, to maximize the 
 likelihood of the observed data.
 This method accommodates any hierarchical 
-structure and maintains nearly linear time and storage complexities per 
+structure and maintains linear time and storage complexities per 
 iteration. 
 This is achieved through a new efficient technique for computing the inverse 
 of the positive definite MLR matrix.
@@ -19,6 +20,11 @@ We show that the inverse of an invertible PSD MLR matrix is also an
 MLR matrix with the same sparsity in factors, 
 and we use the recursive Sherman-Morrison-Woodbury 
 matrix identity to obtain the factors of the inverse.
+Additionally, we present an algorithm that computes the Cholesky factorization of 
+an expanded matrix with linear time and space complexities, 
+yielding the covariance matrix as its Schur complement.
+This paper is accompanied by an open-source package that implements the
+proposed methods.
 
 
 In this repository, we provide `mfmodel` package implementing proposed methods.
