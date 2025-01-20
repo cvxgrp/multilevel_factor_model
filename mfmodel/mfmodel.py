@@ -214,13 +214,13 @@ class MFModel:
         return x
         
 
-    def inv_coefficients(self, refine=False, eps=1e-12, max_iter=1, printing=False, cholesky=False, det=False):
+    def inv_coefficients(self, refine=False, eps=1e-12, max_iter=1, printing=False, cholesky=False, det=True):
         prev_l_recurrence = (1/self.D[:, np.newaxis]) * self.F
         n = self.F.shape[0]
         H_Lm1 = np.zeros(self.F.shape)
         L = len(self.hpart['lk']) + 1
         determinant = np.prod(self.D)
-        logdet = np.log(self.D + 1e-8).sum()
+        logdet = np.log(self.D + 1e-12).sum()
 
         if cholesky:
             # cumulative sums: [p_{L-1} r_{L-1}, ... , p_{L-1} r_{L-1} + ... + p_1 r_1]
@@ -257,6 +257,8 @@ class MFModel:
                 eigvals, eigvecs = np.linalg.eigh(FlTM0[k*rl : (k+1)*rl])
                 sqrt_M2[k*rl : (k+1)*rl] = ((1 / np.sqrt(eigvals)) * eigvecs) @ eigvecs.T
                 M2[k*rl : (k+1)*rl] = ((1/eigvals) * eigvecs) @ eigvecs.T
+                determinant *= np.prod(eigvals)
+                logdet += np.log(eigvals + 1e-12).sum()
                 del eigvals, eigvecs
 
             if cholesky or det:
@@ -273,8 +275,8 @@ class MFModel:
                         Chol_Rl[:, k*rl : (k+1)*rl] = np.linalg.cholesky(FlTM0[k*rl : (k+1)*rl])
                         Chol_Vl[k*rl : (k+1)*rl] = np.square(np.diag(Chol_Rl[:, k*rl : (k+1)*rl]))
                         Chol_Rl[:, k*rl : (k+1)*rl] *= Chol_Vl[k*rl : (k+1)*rl]**(-1/2)
-                determinant *= np.prod(Chol_Vl)
-                logdet += np.log(Chol_Vl + 1e-8).sum()
+                # determinant *= np.prod(Chol_Vl)
+                # logdet += np.log(Chol_Vl + 1e-8).sum()
 
             if cholesky:
                 # Cholesky new factors L^{(l)}, D^{(l)}
@@ -326,9 +328,9 @@ class MFModel:
         if cholesky:
             self.Chol_L = Chol_L
             self.Chol_D = Chol_D
-        if det or cholesky:
-            self.determinant = np.abs(determinant)
-            self.logdet = logdet
+        
+        self.determinant = np.abs(determinant)
+        self.logdet = logdet
         self.inv_B = np.concatenate([-H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
         self.inv_C = np.concatenate([H_Lm1, 1/np.sqrt(self.D).reshape(-1, 1)], axis=1)
 
