@@ -46,7 +46,7 @@ class MFModel:
         self.pi_inv = mf.inv_permutation(self.pi, self.pi)[0]
 
 
-    def init_FD(self, ranks:np.ndarray, hpart:mf.EntryHpartDict, init_type='Y', Y=None):
+    def init_FD(self, ranks:np.ndarray, hpart:mf.EntryHpartDict, init_type='frob', Y=None):
         """
         Initialize B and C given ranks and hpartition
         """
@@ -55,6 +55,14 @@ class MFModel:
         if init_type == 'random':
             F = np.random.randn(n, r-1)
             D = np.random.rand(n) + 1e-3
+        elif init_type == 'frob':
+            N = Y.shape[0]
+            FD_hpart = {"pi":hpart["pi"], "lk":hpart["lk"] + [np.arange(n+1)]}
+            fitted_mlr = mf.MLRMatrix(hpart={"rows":FD_hpart, "cols":FD_hpart})
+            B, _ = fitted_mlr.init_B_C(ranks, fitted_mlr.hpart, init_type='bcd', params=(True, True, None), 
+                                       perm_A=(Y.T/np.sqrt(N), Y.T/np.sqrt(N)))
+            F, D = B[:, :-1], np.square(B[:, -1])
+            D = np.maximum(D, 1e-4)
         elif init_type == 'Y':
             N = Y.shape[0] # Y is already permuted to put factors on blockdiagonal
             _, C = low_rank_approx(Y, dim=r-1, symm=False)

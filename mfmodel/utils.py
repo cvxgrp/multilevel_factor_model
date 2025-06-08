@@ -2,7 +2,8 @@ import numpy as np
 import mlrfit as mf
 from scipy.sparse.linalg import svds, eigsh
 
-
+import umap
+import matplotlib.pyplot as plt
 
 
 
@@ -192,3 +193,89 @@ def get_sparse_F_si_col_sparsity(F_compressed, ranks, F_hpart, group):
         r1, r2 = F_hpart["lk"][level][gi], F_hpart["lk"][level][gi+1]
         res[r1:r2, ranks[:level].sum() : ranks[:level+1].sum()] = F_compressed[r1:r2, ranks[:level].sum() : ranks[:level+1].sum()]
     return res
+
+
+def standardize_matrix(Y, debug=True):
+    # Y: N x num_feat
+    N, n = Y.shape 
+    means = Y.mean(axis=0).reshape(1, -1)
+    Y_demean = Y - means
+    stds = Y.std(axis=0)
+    X =  Y_demean * (1/stds)
+    # assert np.allclose(X, Y_demean @  np.diag((1/stds)))
+
+    if debug:
+        diag_corr = np.einsum('ij,ji->i', X.T,  X) / N
+        assert np.allclose(1, diag_corr)
+        assert np.allclose(0, X.sum(axis=0))
+    return X
+
+
+def hpart_cellxgene_group(adata, feat_type):   
+    feat_types = list(adata.obs[feat_type].unique())
+    t2idx = {t:[] for t in feat_types} 
+    for idx, t in enumerate(list(adata.obs[feat_type])):
+        t2idx[t] += [idx] 
+
+    true_pi = []
+    feat_groups = [0]
+    for t, t2list in t2idx.items():
+        true_pi += t2list
+        feat_groups += [feat_groups[-1] + len(t2list)]
+    true_pi = np.array(true_pi)
+    feat_groups = np.array(feat_groups)
+
+    n = adata.X.shape[0]
+    c2g_hpart = {"rows":{"pi":true_pi,
+                        "lk":[np.array([0, n]),
+                            feat_groups,
+                            np.arange(n+1)]}}
+    c2g_hpart["cols"] = c2g_hpart["rows"]
+
+    valid_hpart(c2g_hpart) 
+    F_hpart = row_col_selections(c2g_hpart)[2]
+    return c2g_hpart, F_hpart
+
+
+def check_contiguous_group_cellxgene(adata, feat_type, c2g_hpart):
+    feat_groups = c2g_hpart["rows"]["lk"][1]
+    pi_ord = c2g_hpart["rows"]["pi"]
+    ordered = list(adata.obs[feat_type][pi_ord].values)
+    for group in range(feat_groups.size - 1):
+        a, b = feat_groups[group], feat_groups[group+1]
+        assert (ordered[a:b] == ordered[a:a+1] * (b-a))
+
+
+def plot_features(feat, colors, tissue_types, min_dist=0.5, cmap='hsv'):
+    emb = umap.UMAP(random_state=42, min_dist=min_dist).fit_transform(feat)
+    fig, ax = plt.subplots(1, figsize=(8, 7), dpi=120)
+    scatter = ax.scatter(emb[:, 0], emb[:, 1], c=colors, s=0.5, cmap=cmap)
+    handles_tissue = [plt.Line2D([0], [0], marker='o', color='w',
+                                      markerfacecolor=scatter.cmap(scatter.norm(i)), 
+                                      markersize=5) for i in range(len(tissue_types))]
+    ax.legend(handles_tissue, tissue_types, loc='center right', bbox_to_anchor=(1.25, 0.5), fontsize='xx-small')
+    return ax 
+
+
+def plot_factors_vs_feat_cellxgene(adata, fitted_mfm, ranks, feat_type, shift=6.5, filename=None, fontsize=8):
+    c2g_hpart, _ = hpart_cellxgene_group(adata, feat_type)
+    feat_types = list(adata.obs[feat_type].unique())
+    feat_pi = c2g_hpart["rows"]["pi"]
+
+    fig, ax1 = plt.subplots(1, 1, figsize=(20, 4), dpi=120)
+
+    loadings = fitted_mfm.F[:, :ranks[0]][fitted_mfm.pi_inv, :][feat_pi]
+    cax1 = ax1.matshow(loadings.T, aspect='auto', cmap='seismic')
+
+    for position in c2g_hpart['rows']["lk"][1][1:]:
+        ax1.axvline(x=position-1, color='yellow', linestyle=':', linewidth=2)
+
+    positions = [0] + c2g_hpart['rows']["lk"][1] + [loadings.shape[1]]
+    for feat, start, end in zip(feat_types, positions[:-1], positions[1:]):
+        center = (start + end) / 2
+        ax1.text(center, shift, feat, rotation=60, ha='center', va='top', fontsize=fontsize)
+
+    fig.colorbar(cax1, ax=ax1)
+    ax1.grid(False)
+    if filename is not None:
+        plt.savefig(f"plots/{filename}_fact_{feat_type}.pdf", bbox_inches='tight')

@@ -10,7 +10,7 @@ from mfmodel.mfmodel import *
 
 
 
-def fit(Y, ranks, hpart, init_type="Y", max_iter=100, eps=1e-8, printing=False, freq=10):
+def fit(Y, ranks, hpart, init_type="frob", max_iter=100, eps=1e-8, printing=False, freq=10):
     # Y: N x n has already permuted columns, ie, features ordered wrt F_hpart
     fitted_mfm = MFModel(hpart=hpart, ranks=ranks)
     fitted_mfm.init_FD(ranks, hpart, init_type=init_type, Y=Y)
@@ -94,7 +94,7 @@ def fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups, mfm_S
         return D1
 
 
-def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, lls=False, max_iter=200, eps=1e-12, 
+def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, lls=False, max_iter=200, eps=1e-6, 
                       freq=50, printing=False):
         """
             Fast EM algorithm
@@ -111,13 +111,15 @@ def fast_em_algorithm(Y, F0, D0, F_hpart, row_selectors, si_groups, ranks, lls=F
                 loglikelihoods += [obj]
                 
             if printing and t % freq == 0:
-                print(f"{t=}, {obj=}")
+                print(f"{t=}, {obj=}, hist(D)={np.histogram(D0, bins=3)}")
 
             F1 = fast_EM_get_F(F0, D0, Y, ranks, F_hpart, row_selectors, si_groups, mfm_Sigma=mfm_Sigma0)
             D1 = fast_EM_get_D(F0, D0, F1, Y, ranks, F_hpart, row_selectors, si_groups, mfm_Sigma=mfm_Sigma0)
             F0, D0 = F1, D1
-            assert D1.min() >= -1e-8 and loglikelihoods[-2] - 1e-8 <= loglikelihoods[-1]
-            if loglikelihoods[-1] - loglikelihoods[-2] < eps * abs(loglikelihoods[-2]):
+            assert D1.min() >= -1e-10 
+            if lls and loglikelihoods[-2] - 1e-8 >= loglikelihoods[-1]: 
+                print(f"*** {loglikelihoods[-2]=}, {loglikelihoods[-1]=}, hist(D)={np.histogram(D0, bins=3)}")
+            if lls and 0 <= loglikelihoods[-1] - loglikelihoods[-2] < eps * abs(loglikelihoods[-2]):
                 print(f"terminating at {t=}")
                 break
         if printing: print(f"{t=}, {obj=}")
