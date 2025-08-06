@@ -257,25 +257,53 @@ def plot_features(feat, colors, tissue_types, min_dist=0.5, cmap='hsv'):
     return ax 
 
 
-def plot_factors_vs_feat_cellxgene(adata, fitted_mfm, ranks, feat_type, shift=6.5, filename=None, fontsize=8):
+def plot_factors_vs_feat_cellxgene( adata, fitted_mfm, ranks, feat_type, 
+                                   filename=None, fontsize=11, min_dist=2500, nticks=6):
     c2g_hpart, _ = hpart_cellxgene_group(adata, feat_type)
     feat_types = list(adata.obs[feat_type].unique())
     feat_pi = c2g_hpart["rows"]["pi"]
-
-    fig, ax1 = plt.subplots(1, 1, figsize=(20, 4), dpi=120)
-
     loadings = fitted_mfm.F[:, :ranks[0]][fitted_mfm.pi_inv, :][feat_pi]
-    cax1 = ax1.matshow(loadings.T, aspect='auto', cmap='seismic')
-
+    nrows, ncols = loadings.shape
+    fig, ax1 = plt.subplots(figsize=(8, 20), dpi=120)
+    cax1 = ax1.matshow(loadings, aspect='auto', cmap='seismic')
+ 
     for position in c2g_hpart['rows']["lk"][1][1:]:
-        ax1.axvline(x=position-1, color='yellow', linestyle=':', linewidth=2)
-
-    positions = [0] + c2g_hpart['rows']["lk"][1] + [loadings.shape[1]]
-    for feat, start, end in zip(feat_types, positions[:-1], positions[1:]):
-        center = (start + end) / 2
-        ax1.text(center, shift, feat, rotation=60, ha='center', va='top', fontsize=fontsize)
-
-    fig.colorbar(cax1, ax=ax1)
+        ax1.axhline(y=position-1, color='yellow', linestyle=':', linewidth=2)
     ax1.grid(False)
-    if filename is not None:
+
+    yticks = np.linspace(0, nrows, nticks, dtype=int)
+    yticks = (np.round(yticks / 5e3) * 5e3).astype(int)
+    ax1.set_yticks(yticks)
+    ax1.set_yticklabels([fr"${y:,}$" for y in yticks], fontsize=fontsize+2)
+    ax1.tick_params(axis='y', labelsize=fontsize+2)
+ 
+    positions = c2g_hpart['rows']["lk"][1]
+    label_centers = [(start + end) / 2 for start, end in zip(positions[:-1], positions[1:])]
+    show_label = [True]
+    for i in range(1, len(label_centers)):
+        show_label.append(label_centers[i] - label_centers[i - 1] > min_dist)
+
+    xlim = ax1.get_xlim()
+    ylim = ax1.get_ylim()
+    x_shift = 0.01 * (xlim[1] - xlim[0]) 
+
+    for feat, center, show in zip(feat_types, label_centers, show_label): 
+        if show and ylim[1] <= center <= ylim[0]:
+            ax1.text(
+                xlim[1] + x_shift, center, feat,
+                ha='left', va='center', fontsize=fontsize, rotation=0, clip_on=False
+            )
+ 
+    cbar = fig.colorbar(
+        cax1, ax=ax1,  
+        orientation='horizontal', 
+        fraction=0.04, pad=0.07, 
+        aspect=30, location='top' if 'location' in plt.colorbar.__code__.co_varnames else None
+    ) 
+    cbar.ax.tick_params(labelsize=fontsize+2)
+
+    if filename:
         plt.savefig(f"plots/{filename}_fact_{feat_type}.pdf", bbox_inches='tight')
+    plt.show()
+
+
